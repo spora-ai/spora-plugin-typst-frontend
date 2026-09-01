@@ -8,7 +8,7 @@
  * asset_url) live in `stores/images.ts`.
  */
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import * as fontsApi from '../api/fonts'
 import * as examplesApi from '../api/examples'
@@ -20,12 +20,20 @@ export const useResourceStore = defineStore('typst-resources', () => {
     const loading = ref(false)
     const uploading = ref(false)
     const error = ref<string | null>(null)
+    // The principal the chip row is currently scoped to. Setter is
+    // public so the page can wire `usePrincipalsStore.selectedPrincipalId`
+    // into it.
+    const principalId = ref<number | null>(null)
+
+    function setPrincipalId(id: number | null): void {
+        principalId.value = id
+    }
 
     async function loadFonts(): Promise<void> {
         loading.value = true
         error.value = null
         try {
-            fonts.value = await fontsApi.listFonts()
+            fonts.value = await fontsApi.listFonts(principalId.value ?? undefined)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load fonts.'
         } finally {
@@ -37,7 +45,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         loading.value = true
         error.value = null
         try {
-            examples.value = await examplesApi.listExamples()
+            examples.value = await examplesApi.listExamples(principalId.value ?? undefined)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load examples.'
         } finally {
@@ -48,6 +56,15 @@ export const useResourceStore = defineStore('typst-resources', () => {
     async function loadAll(): Promise<void> {
         await Promise.all([loadFonts(), loadExamples()])
     }
+
+    // Re-fetch when the principal changes. `flush: 'post'` ensures
+    // the watcher fires after the chip row's store update lands, not
+    // mid-tick.
+    watch(principalId, async () => {
+        if (fonts.value.length > 0 || examples.value.length > 0) {
+            await loadAll()
+        }
+    })
 
     async function uploadFont(name: string, content: string): Promise<FontResource | null> {
         uploading.value = true
@@ -117,6 +134,8 @@ export const useResourceStore = defineStore('typst-resources', () => {
         loading,
         uploading,
         error,
+        principalId,
+        setPrincipalId,
         loadFonts,
         loadExamples,
         loadAll,

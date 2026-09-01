@@ -1,0 +1,111 @@
+<script setup lang="ts">
+/**
+ * Principal chip row — sits between the tabs and the tab content.
+ *
+ * Renders one chip per principal the caller can see (their own
+ * user-principal + every group-principal they're a member of).
+ * No "ALL" / combined chip — the user's stated permission model is
+ * "see one principal's assets at a time, not the union".
+ *
+ * Skill-shipped fonts (tier-1) are visible to all principals
+ * regardless of selection — the backend's `TypstResourceStore::list()`
+ * already mixes tier-1 + tier-2 and the listing is not principal-
+ * scoped for tier-1 resources.
+ *
+ * Loading state: skeletons until the principals store resolves
+ * `/principals/me`. Error state: a single chip showing the error
+ * message — clicking it retries the load.
+ */
+import { onMounted } from 'vue'
+import { usePrincipalsStore } from '../stores/principals'
+
+const principals = usePrincipalsStore()
+
+onMounted(() => {
+    if (principals.principals.length === 0) {
+        principals.loadPrincipals()
+    }
+})
+
+function chipClass(id: number): string {
+    const active = principals.selectedPrincipalId === id
+    return [
+        'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border transition-colors',
+        active
+            ? 'bg-typst-500 text-white border-typst-500'
+            : 'bg-white text-gray-700 border-gray-300 hover:border-typst-500 hover:text-typst-700',
+    ].join(' ')
+}
+
+function chipLabel(p: { name: string; type: string }): string {
+    // Mirror the gallery's chip naming: short label, type-tagged.
+    // User-principal → "My Media" (or the user's display name), group
+    // principal → group name.
+    if (p.type === 'user') {
+        return p.name.startsWith('User #') ? 'My Media' : p.name
+    }
+    return p.name
+}
+</script>
+
+<template>
+    <div class="flex items-center gap-2 flex-wrap" role="tablist" aria-label="Principal scope">
+        <span class="text-xs text-gray-500 uppercase tracking-wide">Scope</span>
+        <div v-if="principals.loading && principals.principals.length === 0" class="flex items-center gap-2">
+            <span
+                v-for="i in 3"
+                :key="i"
+                class="inline-block h-7 w-24 rounded-full bg-gray-200 animate-pulse"
+                aria-hidden="true"
+            />
+        </div>
+        <button
+            v-for="p in principals.principals"
+            :key="p.id"
+            type="button"
+            role="tab"
+            :aria-selected="principals.selectedPrincipalId === p.id"
+            :class="chipClass(p.id)"
+            @click="principals.selectPrincipal(p.id)"
+        >
+            <svg
+                v-if="p.type === 'user'"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+            </svg>
+            <svg
+                v-else
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            {{ chipLabel(p) }}
+        </button>
+        <div
+            v-if="principals.error"
+            class="text-sm text-red-600"
+            role="alert"
+        >{{ principals.error }}</div>
+    </div>
+</template>

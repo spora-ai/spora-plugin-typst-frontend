@@ -91,26 +91,39 @@ function onDragLeave(): void {
 <template>
     <div
         :class="[
-            'rounded-lg border-2 border-dashed p-6 text-center cursor-pointer transition-colors',
+            'rounded-lg border-2 border-dashed p-6 transition-colors',
             dragOver
                 ? 'border-typst-500 bg-typst-50'
                 : 'border-gray-300 hover:border-typst-500 hover:bg-typst-50/40',
         ]"
-        role="button"
-        tabindex="0"
-        @click="pickFile"
-        @keydown.enter="pickFile"
-        @keydown.space.prevent="pickFile"
         @drop="onDrop"
         @dragover="onDragOver"
         @dragleave="onDragLeave"
     >
-        <p class="text-sm text-gray-700">
-            <span class="font-medium">Click to upload</span> or drag a font file here
-        </p>
-        <p class="text-xs text-gray-500 mt-1">
-            Supported: {{ ALLOWED_EXTENSIONS.join(', ') }} (≤ 5 MiB)
-        </p>
+        <div class="flex items-center justify-between gap-4 flex-wrap">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-900">Upload font</p>
+                <p class="text-xs text-gray-500 mt-0.5">
+                    Supported: {{ ALLOWED_EXTENSIONS.join(', ') }} (≤ 5 MiB)
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-typst-500 text-white text-sm font-medium hover:bg-typst-600 disabled:opacity-50"
+                    :disabled="store.uploading"
+                    @click="pickFile"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    Choose file
+                </button>
+                <span class="text-xs text-gray-400">or drop one here</span>
+            </div>
+        </div>
         <input
             ref="fileInput"
             type="file"

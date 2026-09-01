@@ -8,14 +8,17 @@
  *                via the chat composer for v0.1 — the dedicated
  *                `/api/v1/typst/compile` endpoint is a follow-up PR)
  *
- * Tab state lives in a single `activeTab` ref. The page owns the
- * error banner (each store's error ref feeds it). Stores themselves
- * are created once on first access via Pinia — no plugin-local
- * Pinia, just the default install in main.ts.
+ * Principal scope:
+ *   A single chip row between the tab nav and the tab content
+ *   selects which principal's assets to show. Skill-shipped fonts
+ *   are visible regardless of selection (backend always returns
+ *   tier-1). Uploads stay tied to the caller's own principal
+ *   (no override on POST).
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useResourceStore } from '../stores/resources'
 import { useImagesStore } from '../stores/images'
+import { usePrincipalsStore } from '../stores/principals'
 import FontUploader from '../components/FontUploader.vue'
 import FontList from '../components/FontList.vue'
 import ExampleUploader from '../components/ExampleUploader.vue'
@@ -24,6 +27,7 @@ import ImageUploader from '../components/ImageUploader.vue'
 import ImageList from '../components/ImageList.vue'
 import CompileForm from '../components/CompileForm.vue'
 import AlertBanner from '../components/AlertBanner.vue'
+import PrincipalChipRow from '../components/PrincipalChipRow.vue'
 
 type Tab = 'fonts' | 'examples' | 'images' | 'playground'
 
@@ -34,18 +38,34 @@ const props = defineProps<{
 const activeTab = ref<Tab>('fonts')
 const resourceStore = useResourceStore()
 const imagesStore = useImagesStore()
+const principalsStore = usePrincipalsStore()
 
-const combinedError = computed<string | null>(() => resourceStore.error ?? imagesStore.error ?? null)
+// Wire the chip-row selection into both the resource and image
+// stores. The watchers inside each store re-fetch on change.
+watch(
+    () => principalsStore.selectedPrincipalId,
+    (id) => {
+        resourceStore.setPrincipalId(id)
+        imagesStore.setPrincipalId(id)
+    },
+    { immediate: true },
+)
+
+const combinedError = computed<string | null>(() =>
+    resourceStore.error ?? imagesStore.error ?? principalsStore.error ?? null,
+)
 
 function dismissError(): void {
     resourceStore.clearError()
     imagesStore.clearError()
+    principalsStore.clearError()
 }
 
 onMounted(async () => {
-    // Eager-load fonts + examples + images on first mount so the
-    // operator sees the library without clicking each tab. Each
-    // store's call is independent — fire in parallel.
+    // Load principals first so the chip row can settle before the
+    // tab content's first fetch — fonts/examples/images fetch with
+    // `principalId` from the chip-row selection.
+    await principalsStore.loadPrincipals()
     await Promise.all([
         resourceStore.loadAll(),
         imagesStore.loadImages(),
@@ -81,6 +101,8 @@ onMounted(async () => {
                 </li>
             </ul>
         </nav>
+
+        <PrincipalChipRow />
 
         <section v-if="activeTab === 'fonts'" class="space-y-4">
             <FontUploader />

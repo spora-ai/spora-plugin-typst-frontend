@@ -6,7 +6,7 @@
  * path (`DELETE /typst/images/{id}` rather than `{name}`).
  */
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import * as imagesApi from '../api/images'
 import type { ImageResource, UploadedImage } from '../types'
@@ -16,12 +16,17 @@ export const useImagesStore = defineStore('typst-images', () => {
     const loading = ref(false)
     const uploading = ref(false)
     const error = ref<string | null>(null)
+    const principalId = ref<number | null>(null)
+
+    function setPrincipalId(id: number | null): void {
+        principalId.value = id
+    }
 
     async function loadImages(): Promise<void> {
         loading.value = true
         error.value = null
         try {
-            images.value = await imagesApi.listImages()
+            images.value = await imagesApi.listImages(principalId.value ?? undefined)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load images.'
         } finally {
@@ -65,11 +70,20 @@ export const useImagesStore = defineStore('typst-images', () => {
         error.value = null
     }
 
+    // Re-fetch when the principal chip changes.
+    watch(principalId, async () => {
+        if (images.value.length > 0) {
+            await loadImages()
+        }
+    })
+
     return {
         images,
         loading,
         uploading,
         error,
+        principalId,
+        setPrincipalId,
         loadImages,
         uploadImage,
         removeImage,

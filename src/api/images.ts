@@ -2,19 +2,25 @@
  * Image library API client.
  *
  * Wire shape matches `TypstImageController` in the backend:
- *   GET    /typst/images           → { data: { images: ImageResource[] } }
- *   POST   /typst/images           body { filename, mime, content } → 201 + { data: { image: {...} } }
- *   DELETE /typst/images/{id}      → 204
+ *   GET    /typst/images[?principal_id=N]  → { data: { images: ImageResource[] } }
+ *   POST   /typst/images                    body { filename, mime, content } → 201 + { data: { image: {...} } }
+ *   DELETE /typst/images/{id}               → 204
  *
  * `content` is the raw bytes when the file is SVG / UTF-8 (text MIME)
  * and base64-encoded for binary uploads. The controller auto-detects.
+ *
+ * `listImages` accepts an optional `principalId` for the chip-row
+ * selector (must be in the caller's visible principals).
  */
 import { getApi } from './client'
 import type { ImageResource, UploadedImage } from '../types'
 
-export async function listImages(): Promise<ImageResource[]> {
+export async function listImages(principalId?: number): Promise<ImageResource[]> {
     const api = getApi()
-    const result = await api.get<{ images: ImageResource[] }>('/typst/images')
+    const path = principalId !== undefined && principalId !== null
+        ? `/typst/images?principal_id=${encodeURIComponent(String(principalId))}`
+        : '/typst/images'
+    const result = await api.get<{ images: ImageResource[] }>(path)
     return result.images
 }
 
