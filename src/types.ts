@@ -14,9 +14,9 @@ export interface FontResource {
     modified_at: number
 }
 
-export interface ExampleResource {
+export interface TemplateResource {
     name: string
-    kind: 'example'
+    kind: 'template'
     origin: 'skill' | 'principal'
     size: number
     modified_at: number
@@ -40,7 +40,7 @@ export interface UploadedImage {
     created_at: string
 }
 
-export type ResourceKind = 'font' | 'example' | 'image'
+export type ResourceKind = 'font' | 'template' | 'image'
 
 /**
  * Result of the playground compile call. Mirrors the controller's

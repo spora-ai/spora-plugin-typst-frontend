@@ -58,18 +58,18 @@ onMounted(() => {
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         <div
             v-if="store.loading && store.images.length === 0"
-            class="col-span-full text-center text-gray-500 py-6"
+            class="col-span-full text-center text-muted-foreground py-6"
         >Loading…</div>
         <div
             v-else-if="store.images.length === 0"
-            class="col-span-full text-center text-gray-500 py-6"
+            class="col-span-full text-center text-muted-foreground py-6"
         >No images uploaded yet. Drop a PNG / JPEG / WebP / SVG file above.</div>
         <div
             v-for="image in store.images"
             :key="image.id"
-            class="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col"
+            class="rounded-lg border border-border bg-card overflow-hidden flex flex-col"
         >
-            <div class="aspect-square bg-gray-50 flex items-center justify-center">
+            <div class="aspect-square bg-muted flex items-center justify-center">
                 <img
                     :src="image.asset_url"
                     :alt="image.filename"
@@ -79,22 +79,22 @@ onMounted(() => {
             </div>
             <div class="p-3 flex-1 flex flex-col gap-2">
                 <div class="min-w-0">
-                    <div class="font-mono text-xs text-gray-900 truncate" :title="image.filename">
+                    <div class="font-mono text-xs text-foreground truncate" :title="image.filename">
                         {{ image.filename }}
                     </div>
-                    <div class="text-xs text-gray-500 mt-0.5">
+                    <div class="text-xs text-muted-foreground mt-0.5">
                         {{ image.mime_type }} · {{ formatBytes(image.byte_size) }}
                     </div>
                 </div>
                 <div class="flex items-center justify-between gap-2 mt-auto">
                     <button
                         type="button"
-                        class="text-xs font-medium text-typst-700 hover:text-typst-900"
+                        class="text-xs font-medium text-primary hover:text-primary/80"
                         @click="copyUrl(image.asset_url)"
                     >Copy URL</button>
                     <button
                         type="button"
-                        class="text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-40"
+                        class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
                         :disabled="store.uploading"
                         @click="confirmAndDelete(image.id, image.filename)"
                     >Delete</button>

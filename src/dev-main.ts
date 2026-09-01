@@ -15,7 +15,7 @@ import App from './App.vue'
  */
 
 const devApi = {
-    get: async (path: string): Promise<unknown> => ({ data: path === '/typst/fonts' ? { fonts: [] } : path === '/typst/examples' ? { examples: [] } : { images: [] } }),
+    get: async (path: string): Promise<unknown> => ({ data: path === '/typst/fonts' ? { fonts: [] } : path === '/typst/examples' ? { templates: [] } : { images: [] } }),
     post: async (): Promise<unknown> => ({ data: {} }),
     put: async (): Promise<unknown> => ({ data: {} }),
     patch: async (): Promise<unknown> => ({ data: {} }),

@@ -36,9 +36,9 @@ onMounted(() => {
 </script>
 
 <template>
-    <div class="rounded-lg border border-gray-200 overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+    <div class="rounded-lg border border-border overflow-hidden">
+        <table class="min-w-full divide-y divide-border text-sm">
+            <thead class="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                     <th scope="col" class="px-4 py-2">Name</th>
                     <th scope="col" class="px-4 py-2">Origin</th>
@@ -46,39 +46,39 @@ onMounted(() => {
                     <th scope="col" class="px-4 py-2 text-right">Actions</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100 bg-white">
+            <tbody class="divide-y divide-border bg-card">
                 <tr v-if="store.loading && store.fonts.length === 0">
-                    <td colspan="4" class="px-4 py-6 text-center text-gray-500">Loading…</td>
+                    <td colspan="4" class="px-4 py-6 text-center text-muted-foreground">Loading…</td>
                 </tr>
                 <tr v-else-if="store.fonts.length === 0">
-                    <td colspan="4" class="px-4 py-6 text-center text-gray-500">
+                    <td colspan="4" class="px-4 py-6 text-center text-muted-foreground">
                         No fonts uploaded yet. Drop a .ttf / .otf / .woff / .woff2 file above.
                     </td>
                 </tr>
                 <tr v-for="font in store.fonts" :key="font.name">
-                    <td class="px-4 py-2 font-mono text-gray-900">{{ font.name }}</td>
+                    <td class="px-4 py-2 font-mono text-foreground">{{ font.name }}</td>
                     <td class="px-4 py-2">
                         <span
                             :class="[
                                 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
                                 font.origin === 'skill'
-                                    ? 'bg-typst-50 text-typst-700'
-                                    : 'bg-emerald-50 text-emerald-700',
+                                    ? 'bg-accent text-accent-foreground'
+                                    : 'bg-secondary text-secondary-foreground',
                             ]"
                         >
                             {{ font.origin === 'skill' ? 'Skill-shipped' : 'Principal' }}
                         </span>
                     </td>
-                    <td class="px-4 py-2 text-right tabular-nums text-gray-700">{{ formatBytes(font.size) }}</td>
+                    <td class="px-4 py-2 text-right tabular-nums text-foreground">{{ formatBytes(font.size) }}</td>
                     <td class="px-4 py-2 text-right">
                         <button
                             v-if="font.origin === 'principal'"
                             type="button"
-                            class="text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-40"
+                            class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
                             :disabled="store.uploading"
                             @click="confirmAndDelete(font.name)"
                         >Delete</button>
-                        <span v-else class="text-xs text-gray-400">Built-in</span>
+                        <span v-else class="text-xs text-muted-foreground">Built-in</span>
                     </td>
                 </tr>
             </tbody>

@@ -69,22 +69,27 @@ async function onDrop(event: DragEvent): Promise<void> {
 
 <template>
     <div
-        class="rounded-lg border-2 border-dashed border-gray-300 hover:border-typst-500 hover:bg-typst-50/40 p-6 transition-colors"
+        :class="[
+            'rounded-lg border-2 border-dashed p-6 transition-colors',
+            dragOver
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:border-primary/60 hover:bg-muted/50',
+        ]"
         @drop="onDrop"
         @dragover.prevent="dragOver = true"
         @dragleave="dragOver = false"
     >
         <div class="flex items-center justify-between gap-4 flex-wrap">
             <div class="min-w-0">
-                <p class="text-sm font-medium text-gray-900">Upload image</p>
-                <p class="text-xs text-gray-500 mt-0.5">
+                <p class="text-sm font-medium text-foreground">Upload image</p>
+                <p class="text-xs text-muted-foreground mt-0.5">
                     Supported: PNG, JPEG, WebP, SVG (≤ 5 MiB)
                 </p>
             </div>
             <div class="flex items-center gap-2">
                 <button
                     type="button"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-typst-500 text-white text-sm font-medium hover:bg-typst-600 disabled:opacity-50"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
                     :disabled="store.uploading"
                     @click="pickFile"
                 >
@@ -95,7 +100,7 @@ async function onDrop(event: DragEvent): Promise<void> {
                     </svg>
                     Choose file
                 </button>
-                <span class="text-xs text-gray-400">or drop one here</span>
+                <span class="text-xs text-muted-foreground">or drop one here</span>
             </div>
         </div>
         <input

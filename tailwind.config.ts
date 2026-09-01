@@ -1,10 +1,11 @@
 import type { Config } from 'tailwindcss'
+import { fontFamily } from 'tailwindcss/defaultTheme'
 
 /**
  * Tailwind config for the Typst plugin frontend.
  *
  * Mirrors `spora-plugin-memories-frontend/tailwind.config.ts` so the
- * plugin boundary is identical:
+ * plugin boundary is identical to its sibling plugins:
  *  - `corePlugins.preflight: false` — the host owns document-level
  *    resets; the plugin bundle omits them.
  *  - `important: '#spora-plugin-typst'` — every generated utility
@@ -13,28 +14,54 @@ import type { Config } from 'tailwindcss'
  *    PluginAppPage wraps the slot in `<div id="spora-plugin-typst">`
  *    on mount.
  *
- * Theme tokens mirror the host SPA's tokens (grey scale, indigo
- * accent for typst-700) so plugins render with the same design
- * language without the host needing to know the plugin's sources.
+ * Theme tokens reference the host SPA's CSS variables (border, input,
+ * ring, background, foreground, primary, secondary, destructive, muted,
+ * accent) so plugins render with the same design language as the
+ * gallery, memories, and other admin surfaces — no per-plugin palette
+ * to keep in sync with the host.
  */
 export default {
     content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
     corePlugins: { preflight: false },
     important: '#spora-plugin-typst',
+    darkMode: 'class',
     theme: {
         extend: {
             fontFamily: {
+                sans: ['Barlow', ...fontFamily.sans],
                 mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
             },
             colors: {
-                typst: {
-                    50: '#f5f7fb',
-                    100: '#e8ecf4',
-                    500: '#3a5c8c',
-                    600: '#2c4773',
-                    700: '#1f325a',
-                    900: '#0e1a36',
+                border: 'hsl(var(--border))',
+                input: 'hsl(var(--input))',
+                ring: 'hsl(var(--ring))',
+                background: 'hsl(var(--background))',
+                foreground: 'hsl(var(--foreground))',
+                primary: {
+                    DEFAULT: 'hsl(var(--primary))',
+                    foreground: 'hsl(var(--primary-foreground))',
                 },
+                secondary: {
+                    DEFAULT: 'hsl(var(--secondary))',
+                    foreground: 'hsl(var(--secondary-foreground))',
+                },
+                destructive: {
+                    DEFAULT: 'hsl(var(--destructive))',
+                    foreground: 'hsl(var(--destructive-foreground))',
+                },
+                muted: {
+                    DEFAULT: 'hsl(var(--muted))',
+                    foreground: 'hsl(var(--muted-foreground))',
+                },
+                accent: {
+                    DEFAULT: 'hsl(var(--accent))',
+                    foreground: 'hsl(var(--accent-foreground))',
+                },
+            },
+            borderRadius: {
+                lg: 'var(--radius)',
+                md: 'calc(var(--radius) - 2px)',
+                sm: 'calc(var(--radius) - 4px)',
             },
         },
     },

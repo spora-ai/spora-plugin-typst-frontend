@@ -30,10 +30,10 @@ onMounted(() => {
 function chipClass(id: number): string {
     const active = principals.selectedPrincipalId === id
     return [
-        'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border transition-colors',
+        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors',
         active
-            ? 'bg-typst-500 text-white border-typst-500'
-            : 'bg-white text-gray-700 border-gray-300 hover:border-typst-500 hover:text-typst-700',
+            ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+            : 'bg-background text-foreground border-border hover:border-primary hover:text-primary',
     ].join(' ')
 }
 
@@ -50,12 +50,12 @@ function chipLabel(p: { name: string; type: string }): string {
 
 <template>
     <div class="flex items-center gap-2 flex-wrap" role="tablist" aria-label="Principal scope">
-        <span class="text-xs text-gray-500 uppercase tracking-wide">Scope</span>
+        <span class="text-xs text-muted-foreground uppercase tracking-wide">Scope</span>
         <div v-if="principals.loading && principals.principals.length === 0" class="flex items-center gap-2">
             <span
                 v-for="i in 3"
                 :key="i"
-                class="inline-block h-7 w-24 rounded-full bg-gray-200 animate-pulse"
+                class="inline-block h-7 w-24 rounded-full bg-muted animate-pulse"
                 aria-hidden="true"
             />
         </div>
@@ -104,7 +104,7 @@ function chipLabel(p: { name: string; type: string }): string {
         </button>
         <div
             v-if="principals.error"
-            class="text-sm text-red-600"
+            class="text-sm text-destructive"
             role="alert"
         >{{ principals.error }}</div>
     </div>

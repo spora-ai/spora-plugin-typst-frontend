@@ -1,12 +1,10 @@
 <script setup lang="ts">
 /**
  * TypstPage — single-page admin UI with four tabs:
- *   - Fonts     (uploader + list of per-principal fonts)
- *   - Examples  (uploader + list of per-principal typ templates)
- *   - Images    (uploader + grid of per-principal images)
- *   - Playground (typ source editor + format selector; renders
- *                via the chat composer for v0.1 — the dedicated
- *                `/api/v1/typst/compile` endpoint is a follow-up PR)
+ *   - Fonts      (uploader + list of per-principal fonts)
+ *   - Templates  (uploader + list of per-principal typ templates)
+ *   - Images     (uploader + grid of per-principal images)
+ *   - Playground (typ source editor + format selector + result panel)
  *
  * Principal scope:
  *   A single chip row between the tab nav and the tab content
@@ -21,15 +19,15 @@ import { useImagesStore } from '../stores/images'
 import { usePrincipalsStore } from '../stores/principals'
 import FontUploader from '../components/FontUploader.vue'
 import FontList from '../components/FontList.vue'
-import ExampleUploader from '../components/ExampleUploader.vue'
-import ExampleList from '../components/ExampleList.vue'
+import TemplateUploader from '../components/TemplateUploader.vue'
+import TemplateList from '../components/TemplateList.vue'
 import ImageUploader from '../components/ImageUploader.vue'
 import ImageList from '../components/ImageList.vue'
 import CompileForm from '../components/CompileForm.vue'
 import AlertBanner from '../components/AlertBanner.vue'
 import PrincipalChipRow from '../components/PrincipalChipRow.vue'
 
-type Tab = 'fonts' | 'examples' | 'images' | 'playground'
+type Tab = 'fonts' | 'templates' | 'images' | 'playground'
 
 const props = defineProps<{
     hostContext: import('../shims').PluginHostContext
@@ -63,7 +61,7 @@ function dismissError(): void {
 
 onMounted(async () => {
     // Load principals first so the chip row can settle before the
-    // tab content's first fetch — fonts/examples/images fetch with
+    // tab content's first fetch — fonts/templates/images fetch with
     // `principalId` from the chip-row selection.
     await principalsStore.loadPrincipals()
     await Promise.all([
@@ -74,10 +72,10 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="mx-auto max-w-6xl p-6 space-y-4">
+    <div class="mx-auto max-w-6xl p-6 space-y-5">
         <header class="flex items-baseline justify-between gap-3">
-            <h1 class="text-xl font-semibold text-typst-900">Typst</h1>
-            <span class="text-xs text-gray-500">Per-principal font / example / image library</span>
+            <h1 class="text-xl font-semibold text-foreground">Typst</h1>
+            <span class="text-xs text-muted-foreground">Per-principal font / template / image library</span>
         </header>
 
         <AlertBanner
@@ -85,33 +83,40 @@ onMounted(async () => {
             @dismiss="dismissError"
         />
 
-        <nav class="border-b border-gray-200">
+        <!--
+          Principal selector sits ABOVE the tab nav — the scope
+          determines what every tab lists, so it gets the most
+          prominent visual position. The header (h1) is on top,
+          then the chip row, then the tabs.
+        -->
+        <PrincipalChipRow />
+
+        <nav class="border-b border-border">
             <ul class="flex gap-1">
-                <li v-for="tab in (['fonts', 'examples', 'images', 'playground'] as Tab[])" :key="tab">
+                <li v-for="tab in (['fonts', 'templates', 'images', 'playground'] as Tab[])" :key="tab">
                     <button
                         type="button"
                         :class="[
-                            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                            'px-4 py-2 text-sm border-b-2 -mb-px transition-colors rounded-t',
                             activeTab === tab
-                                ? 'border-typst-500 text-typst-900'
-                                : 'border-transparent text-gray-500 hover:text-typst-700 hover:border-typst-200',
+                                ? 'border-primary text-primary font-semibold bg-primary/5'
+                                : 'border-transparent text-muted-foreground font-medium hover:text-foreground hover:border-border',
                         ]"
+                        :aria-current="activeTab === tab ? 'page' : undefined"
                         @click="activeTab = tab"
                     >{{ tab.charAt(0).toUpperCase() + tab.slice(1) }}</button>
                 </li>
             </ul>
         </nav>
 
-        <PrincipalChipRow />
-
         <section v-if="activeTab === 'fonts'" class="space-y-4">
             <FontUploader />
             <FontList />
         </section>
 
-        <section v-else-if="activeTab === 'examples'" class="space-y-4">
-            <ExampleUploader />
-            <ExampleList />
+        <section v-else-if="activeTab === 'templates'" class="space-y-4">
+            <TemplateUploader />
+            <TemplateList />
         </section>
 
         <section v-else-if="activeTab === 'images'" class="space-y-4">

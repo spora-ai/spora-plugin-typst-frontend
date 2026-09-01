@@ -1,5 +1,5 @@
 /**
- * Pinia store for fonts + examples (tier-1 + tier-2 resources).
+ * Pinia store for fonts + templates (tier-1 + tier-2 resources).
  *
  * The two resource kinds are administered through the same UI shape
  * (upload / list / delete), so we keep them in a single store to
@@ -11,12 +11,12 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import * as fontsApi from '../api/fonts'
-import * as examplesApi from '../api/examples'
-import type { FontResource, ExampleResource } from '../types'
+import * as templatesApi from '../api/templates'
+import type { FontResource, TemplateResource } from '../types'
 
 export const useResourceStore = defineStore('typst-resources', () => {
     const fonts = ref<FontResource[]>([])
-    const examples = ref<ExampleResource[]>([])
+    const templates = ref<TemplateResource[]>([])
     const loading = ref(false)
     const uploading = ref(false)
     const error = ref<string | null>(null)
@@ -41,27 +41,27 @@ export const useResourceStore = defineStore('typst-resources', () => {
         }
     }
 
-    async function loadExamples(): Promise<void> {
+    async function loadTemplates(): Promise<void> {
         loading.value = true
         error.value = null
         try {
-            examples.value = await examplesApi.listExamples(principalId.value ?? undefined)
+            templates.value = await templatesApi.listTemplates(principalId.value ?? undefined)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to load examples.'
+            error.value = e instanceof ApiError ? e.message : 'Failed to load templates.'
         } finally {
             loading.value = false
         }
     }
 
     async function loadAll(): Promise<void> {
-        await Promise.all([loadFonts(), loadExamples()])
+        await Promise.all([loadFonts(), loadTemplates()])
     }
 
     // Re-fetch when the principal changes. `flush: 'post'` ensures
     // the watcher fires after the chip row's store update lands, not
     // mid-tick.
     watch(principalId, async () => {
-        if (fonts.value.length > 0 || examples.value.length > 0) {
+        if (fonts.value.length > 0 || templates.value.length > 0) {
             await loadAll()
         }
     })
@@ -81,15 +81,15 @@ export const useResourceStore = defineStore('typst-resources', () => {
         }
     }
 
-    async function uploadExample(name: string, content: string): Promise<ExampleResource | null> {
+    async function uploadTemplate(name: string, content: string): Promise<TemplateResource | null> {
         uploading.value = true
         error.value = null
         try {
-            const example = await examplesApi.uploadExample(name, content)
-            examples.value.push(example)
-            return example
+            const template = await templatesApi.uploadTemplate(name, content)
+            templates.value.push(template)
+            return template
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to upload example.'
+            error.value = e instanceof ApiError ? e.message : 'Failed to upload template.'
             return null
         } finally {
             uploading.value = false
@@ -110,14 +110,14 @@ export const useResourceStore = defineStore('typst-resources', () => {
         }
     }
 
-    async function removeExample(name: string): Promise<void> {
+    async function removeTemplate(name: string): Promise<void> {
         uploading.value = true
         error.value = null
         try {
-            await examplesApi.deleteExample(name)
-            examples.value = examples.value.filter((e) => e.name !== name)
+            await templatesApi.deleteTemplate(name)
+            templates.value = templates.value.filter((t) => t.name !== name)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to delete example.'
+            error.value = e instanceof ApiError ? e.message : 'Failed to delete template.'
             throw e
         } finally {
             uploading.value = false
@@ -130,19 +130,19 @@ export const useResourceStore = defineStore('typst-resources', () => {
 
     return {
         fonts,
-        examples,
+        templates,
         loading,
         uploading,
         error,
         principalId,
         setPrincipalId,
         loadFonts,
-        loadExamples,
+        loadTemplates,
         loadAll,
         uploadFont,
-        uploadExample,
+        uploadTemplate,
         removeFont,
-        removeExample,
+        removeTemplate,
         clearError,
     }
 })

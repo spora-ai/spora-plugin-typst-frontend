@@ -27,8 +27,10 @@ defineEmits<{
     <div
         v-if="message"
         :class="[
-            'rounded-md px-4 py-3 text-sm flex items-start justify-between gap-3',
-            variant === 'info' ? 'bg-blue-50 text-blue-900 border border-blue-200' : 'bg-red-50 text-red-900 border border-red-200',
+            'rounded-md px-4 py-3 text-sm flex items-start justify-between gap-3 border',
+            variant === 'info'
+                ? 'bg-secondary text-secondary-foreground border-border'
+                : 'bg-destructive/10 text-destructive border-destructive/30',
         ]"
         role="alert"
     >
