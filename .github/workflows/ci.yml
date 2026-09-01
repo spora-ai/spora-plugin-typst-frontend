@@ -1,0 +1,104 @@
+name: CI
+
+# External actions are pinned to full commit SHAs to prevent supply-chain
+# attacks via tag reassignment. Run `gh api repos/OWNER/REPO/git/refs/tags/vN`
+# to look up the current SHA when upgrading.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint + Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npx vue-tsc --noEmit
+
+      - name: Test
+        run: npm test
+
+  build:
+    name: Build + smoke
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke
+        # Verify the IIFE bundle mounts in a headless DOM. Catches
+        # regressions where the build emits a bundle that throws on
+        # window.SporaAppTypst.mount() — the kind of failure that's
+        # invisible to the unit tests but breaks production.
+        run: node scripts/smoke.js
+
+  size-budget:
+    name: Bundle size budget
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify bundle size
+        # Sanity check — main.js + style.css combined should fit under
+        # 200 KB pre-gzip. IIFE plugins sharing the host's Vue + Pinia
+        # + vue-router should land well under that; this catches the
+        # "accidentally bundled a 1 MB CodeMirror" regression.
+        run: |
+          MAIN=$(stat -c%s frontend/main.js)
+          CSS=$(stat -c%s frontend/style.css)
+          TOTAL=$((MAIN + CSS))
+          echo "main.js=${MAIN}B style.css=${CSS}B total=${TOTAL}B"
+          if [ $TOTAL -gt 204800 ]; then
+            echo "::error::Bundle exceeded 200 KB budget (got ${TOTAL}B)"
+            exit 1
+          fi

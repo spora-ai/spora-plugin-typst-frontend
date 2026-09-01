@@ -1,0 +1,28 @@
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Global plugin chrome. Scoped to the plugin's mount slot — the
+ * host SPA's styles are not affected because Tailwind's preflight
+ * uses CSS resets that scope themselves to the cascade.
+ *
+ * The host's plugin-loader uses an iframe-like slot for IIFE
+ * plugins — anything outside this file's selectors is fine to leak
+ * because the plugin's <style> tag is injected as a sibling of the
+ * mount root, not as a global stylesheet override.
+ */
+:root {
+    color-scheme: light;
+}
+
+html,
+body,
+#app {
+    height: 100%;
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #1f2937;
+    background: #f9fafb;
+}

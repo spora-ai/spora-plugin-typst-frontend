@@ -1,0 +1,78 @@
+/**
+ * Pinia store for the per-principal image library.
+ *
+ * Distinct from `stores/resources.ts` because images surface
+ * different fields (id, asset_url, mime_type) and a different delete
+ * path (`DELETE /typst/images/{id}` rather than `{name}`).
+ */
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { ApiError } from '../api/client'
+import * as imagesApi from '../api/images'
+import type { ImageResource, UploadedImage } from '../types'
+
+export const useImagesStore = defineStore('typst-images', () => {
+    const images = ref<ImageResource[]>([])
+    const loading = ref(false)
+    const uploading = ref(false)
+    const error = ref<string | null>(null)
+
+    async function loadImages(): Promise<void> {
+        loading.value = true
+        error.value = null
+        try {
+            images.value = await imagesApi.listImages()
+        } catch (e) {
+            error.value = e instanceof ApiError ? e.message : 'Failed to load images.'
+        } finally {
+            loading.value = false
+        }
+    }
+
+    async function uploadImage(filename: string, mime: string, content: string): Promise<UploadedImage | null> {
+        uploading.value = true
+        error.value = null
+        try {
+            const image = await imagesApi.uploadImage(filename, mime, content)
+            // Refresh the list — the canonical sort order is by
+            // `created_at DESC`, so a fresh prepend would be wrong;
+            // re-fetch is the simplest correct path.
+            await loadImages()
+            return image
+        } catch (e) {
+            error.value = e instanceof ApiError ? e.message : 'Failed to upload image.'
+            return null
+        } finally {
+            uploading.value = false
+        }
+    }
+
+    async function removeImage(id: string): Promise<void> {
+        uploading.value = true
+        error.value = null
+        try {
+            await imagesApi.deleteImage(id)
+            images.value = images.value.filter((i) => i.id !== id)
+        } catch (e) {
+            error.value = e instanceof ApiError ? e.message : 'Failed to delete image.'
+            throw e
+        } finally {
+            uploading.value = false
+        }
+    }
+
+    function clearError(): void {
+        error.value = null
+    }
+
+    return {
+        images,
+        loading,
+        uploading,
+        error,
+        loadImages,
+        uploadImage,
+        removeImage,
+        clearError,
+    }
+})
