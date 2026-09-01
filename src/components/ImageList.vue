@@ -36,7 +36,7 @@ async function copyUrl(url: string): Promise<void> {
         document.body.appendChild(textarea)
         textarea.select()
         try { document.execCommand('copy') } catch { /* ignore */ }
-        document.body.removeChild(textarea)
+        textarea.remove()
     }
 }
 

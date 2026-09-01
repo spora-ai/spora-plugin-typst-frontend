@@ -14,8 +14,14 @@ import App from './App.vue'
  * `spora-frontend`) and visit `/apps/typst`.
  */
 
+function devStubData(path: string): Record<string, unknown> {
+    if (path === '/typst/fonts') return { fonts: [] }
+    if (path === '/typst/examples') return { templates: [] }
+    return { images: [] }
+}
+
 const devApi = {
-    get: async (path: string): Promise<unknown> => ({ data: path === '/typst/fonts' ? { fonts: [] } : path === '/typst/examples' ? { templates: [] } : { images: [] } }),
+    get: async (path: string): Promise<unknown> => ({ data: devStubData(path) }),
     post: async (): Promise<unknown> => ({ data: {} }),
     put: async (): Promise<unknown> => ({ data: {} }),
     patch: async (): Promise<unknown> => ({ data: {} }),

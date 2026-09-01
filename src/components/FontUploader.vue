@@ -121,13 +121,15 @@ function onDragLeave(): void {
                     </svg>
                     Choose file
                 </button>
-                <span class="text-xs text-muted-foreground">or drop one here</span>
+                <label for="typst-font-upload" class="text-xs text-muted-foreground cursor-pointer">or drop one here</label>
             </div>
         </div>
         <input
+            id="typst-font-upload"
             ref="fileInput"
             type="file"
             :accept="ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(',')"
+            aria-label="Upload font file"
             class="hidden"
             @change="onFileChange"
         />

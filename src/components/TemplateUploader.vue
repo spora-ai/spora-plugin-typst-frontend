@@ -17,19 +17,7 @@ function pickFile(): void {
 }
 
 function readFileAsText(file: File): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = (): void => {
-            const result = reader.result
-            if (typeof result !== 'string') {
-                reject(new Error('FileReader returned non-string result'))
-                return
-            }
-            resolve(result)
-        }
-        reader.onerror = (): void => reject(new Error('FileReader failed'))
-        reader.readAsText(file)
-    })
+    return file.text()
 }
 
 async function handleFile(file: File): Promise<void> {
@@ -94,13 +82,15 @@ async function onDrop(event: DragEvent): Promise<void> {
                     </svg>
                     Choose file
                 </button>
-                <span class="text-xs text-muted-foreground">or drop one here</span>
+                <label for="typst-template-upload" class="text-xs text-muted-foreground cursor-pointer">or drop one here</label>
             </div>
         </div>
         <input
+            id="typst-template-upload"
             ref="fileInput"
             type="file"
             accept=".typ"
+            aria-label="Upload Typst template file"
             class="hidden"
             @change="onFileChange"
         />

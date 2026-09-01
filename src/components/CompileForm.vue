@@ -100,7 +100,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
         } catch {
             return false
         } finally {
-            document.body.removeChild(textarea)
+            textarea.remove()
         }
     }
 }
@@ -223,7 +223,11 @@ function isPngOutput(r: CompileResult | null): boolean {
             </div>
             <div v-if="result.format === 'pdf'" class="space-y-3">
                 <div class="bg-muted rounded p-2">
-                    <iframe :src="result.asset_url" class="w-full h-96 border border-border rounded" />
+                    <iframe
+                        :src="result.asset_url"
+                        title="Typst PDF render"
+                        class="w-full h-96 border border-border rounded"
+                    />
                 </div>
                 <div v-if="result.preview_url" class="bg-muted rounded p-2">
                     <p class="text-xs text-muted-foreground mb-1">First-page preview (PNG)</p>
