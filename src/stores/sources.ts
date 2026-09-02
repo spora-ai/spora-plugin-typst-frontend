@@ -58,6 +58,37 @@ export const useSourcesStore = defineStore('typst-sources', () => {
         }
     }
 
+    /**
+     * Persist a new playground source row without compiling. Used
+     * by the editor's "Save" button when no source is currently
+     * open (a fresh buffer). Returns the summary on success or
+     * null on failure (the error message is set on `error.value`).
+     *
+     * The new row is prepended to `sources.value` so the open picker
+     * reflects the freshly created file without a full reload.
+     */
+    async function createSource(
+        filename: string,
+        content: string,
+    ): Promise<PlaygroundSourceSummary | null> {
+        saving.value = true
+        error.value = null
+        try {
+            const created = await sourcesApi.createSource(filename, content, principalId.value)
+            // Prepend so the most-recently-saved file surfaces first
+            // in the picker; the existing ordering by updated_at
+            // would also surface it on the next reload, but the
+            // in-memory list wouldn't reflect it without this.
+            sources.value = [created, ...sources.value.filter((s) => s.id !== created.id)]
+            return created
+        } catch (e) {
+            error.value = e instanceof ApiError ? e.message : 'Failed to save playground source.'
+            return null
+        } finally {
+            saving.value = false
+        }
+    }
+
     async function saveSource(id: string, content: string): Promise<PlaygroundSource | null> {
         saving.value = true
         error.value = null
@@ -138,6 +169,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
         setPrincipalId,
         loadSources,
         openSource,
+        createSource,
         saveSource,
         removeSource,
         clearError,

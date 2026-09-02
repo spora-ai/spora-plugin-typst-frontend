@@ -90,6 +90,52 @@ body,
 .typst-editor {
     position: relative;
 }
+/*
+ * Selection-accurate overlay: the highlight <pre> and the
+ * transparent <textarea> must render every glyph at the same
+ * position. Properties that affect glyph metrics need to be
+ * identical on both. Properties that don't (color, background,
+ * pointer-events) can differ.
+ *
+ * Common misalignments we explicitly defend against:
+ *   - `box-sizing`: default for <pre> is content-box, default
+ *     for <textarea> is border-box. Force border-box on both so
+ *     padding is included in the width and the text origin is
+ *     the same on both elements.
+ *   - `tab-size` only on textarea — tabs would render one width
+ *     in the highlight and another in the textarea, drifting
+ *     the selection from the visible glyphs from the first tab
+ *     onward.
+ *   - `letter-spacing` not set — Chromium and Firefox have
+ *     different defaults for `letter-spacing: normal` on
+ *     monospace fallbacks, and `ui-monospace` resolves
+ *     differently per OS. Pin both to 0.
+ *   - `font-variant-ligatures` — `normal` enables ligatures on
+ *     some monospace fonts (JetBrains Mono, Fira Code) and not
+ *     others, drifting the visible vs. selectable glyphs.
+ *   - `text-rendering` — Chromium uses subpixel antialiasing
+ *     for text inside <pre> by default but for <textarea>
+ *     text in some macOS contexts it uses grayscale. Force
+ *     `optimizeSpeed` (no antialiasing difference) so the
+ *     rendered glyphs are at the same x-offset on both
+ *     elements.
+ */
+.typst-editor__highlight,
+.typst-editor__textarea {
+    box-sizing: border-box;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    font-variant-ligatures: none;
+    font-feature-settings: normal;
+    letter-spacing: 0;
+    line-height: 1.5;
+    tab-size: 2;
+    -moz-tab-size: 2;
+    text-rendering: optimizeSpeed;
+    word-break: normal;
+    overflow-wrap: normal;
+}
 .typst-editor__highlight {
     position: absolute;
     inset: 0;
@@ -98,10 +144,6 @@ body,
     overflow: auto;
     pointer-events: none;
     white-space: pre;
-    word-wrap: normal;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.75rem;
-    line-height: 1.4;
     color: #1f2937;
 }
 .typst-editor__textarea {
@@ -113,16 +155,10 @@ body,
     background: transparent;
     color: transparent;
     caret-color: #1f2937;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.75rem;
-    line-height: 1.4;
     border: 0;
     outline: none;
     resize: vertical;
     white-space: pre;
-    word-wrap: normal;
-    overflow-wrap: normal;
-    tab-size: 2;
 }
 .typst-editor__textarea::selection {
     background: rgba(124, 58, 237, 0.25);

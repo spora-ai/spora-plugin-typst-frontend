@@ -7,6 +7,10 @@
  * examples (`origin: 'skill'`) render with the lock badge and a
  * disabled delete button.
  *
+ * Ordering: principal uploads first (operator's own work), then
+ * a "Built-in" divider, then the skill-shipped entries on a muted
+ * background so the boundary is obvious at a glance.
+ *
  * Source-preview handling mirrors TemplateList: cache the
  * highlighted HTML in `highlightedByName` and only fetch + tokenize
  * on first expand. The open card spans `md:col-span-2` so the
@@ -28,8 +32,21 @@ const loadError = ref<string | null>(null)
 function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`
-    return `${(n / 1024 / 1024).toFixed(2)} MiB`
+    return `${(n / (1024 * 1024)).toFixed(2)} MiB`
 }
+
+const principalExamples = computed(() =>
+    (store.examples ?? [])
+        .filter((e) => e.origin === 'principal')
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+)
+const skillExamples = computed(() =>
+    (store.examples ?? [])
+        .filter((e) => e.origin === 'skill')
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+)
 
 function togglePreview(name: string): void {
     openId.value = openId.value === name ? null : name
@@ -83,61 +100,126 @@ onMounted(() => {
 </script>
 
 <template>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div class="space-y-4">
         <div
             v-if="store.loading && !hasExamples"
-            class="md:col-span-2 text-center text-muted-foreground py-6"
+            class="text-center text-muted-foreground py-6"
         >Loading…</div>
         <div
             v-else-if="!hasExamples"
-            class="md:col-span-2 text-center text-muted-foreground py-6"
+            class="text-center text-muted-foreground py-6"
         >No example patterns yet.</div>
-        <div
-            v-for="example in (store.examples ?? [])"
-            :key="example.name"
-            :class="[
-                'rounded-lg border border-border bg-card p-4 space-y-2',
-                openId === example.name ? 'md:col-span-2' : '',
-            ]"
-        >
-            <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                    <div class="font-mono text-sm text-foreground truncate">{{ example.name }}</div>
-                    <div class="text-xs text-muted-foreground mt-0.5">
-                        {{ formatBytes(example.size) }}
-                        · <span class="text-muted-foreground/70">{{ example.origin === 'skill' ? 'Skill-shipped' : 'Principal' }}</span>
+        <template v-else>
+            <div
+                v-if="principalExamples.length > 0"
+                class="grid grid-cols-1 md:grid-cols-2 gap-3"
+            >
+                <div
+                    v-for="example in principalExamples"
+                    :key="example.name"
+                    :class="[
+                        'rounded-lg border border-border bg-card p-4 space-y-2',
+                        openId === example.name ? 'md:col-span-2' : '',
+                    ]"
+                >
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="font-mono text-sm text-foreground truncate">{{ example.name }}</div>
+                            <div class="text-xs text-muted-foreground mt-0.5">
+                                {{ formatBytes(example.size) }}
+                                · <span class="text-muted-foreground/70">Your upload</span>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
+                            :disabled="store.uploading"
+                            @click="confirmAndDelete(example.name)"
+                        >Delete</button>
+                    </div>
+                    <details
+                        class="text-xs"
+                        :open="openId === example.name"
+                        @toggle="togglePreview(example.name)"
+                    >
+                        <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
+                        <div v-if="openId === example.name" class="mt-2">
+                            <div
+                                v-if="loadingName === example.name"
+                                class="p-2 text-muted-foreground"
+                            >Loading…</div>
+                            <div
+                                v-else-if="loadError !== null"
+                                class="p-2 text-destructive"
+                            >{{ loadError }}</div>
+                            <pre
+                                v-else-if="highlightedByName[example.name] !== undefined"
+                                class="p-3 bg-muted rounded text-xs overflow-x-auto max-h-[32rem] overflow-y-auto"
+                            ><code class="hljs language-typst" v-html="highlightedByName[example.name]"></code></pre>
+                        </div>
+                    </details>
+                </div>
+            </div>
+            <div
+                v-if="skillExamples.length > 0"
+                class="space-y-3"
+            >
+                <div
+                    v-if="principalExamples.length > 0"
+                    class="flex items-center gap-3 pt-1"
+                >
+                    <span class="text-[10px] uppercase tracking-wide text-muted-foreground">Built-in</span>
+                    <span class="flex-1 border-t border-border" />
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div
+                        v-for="example in skillExamples"
+                        :key="example.name"
+                        :class="[
+                            'rounded-lg border border-border bg-muted/40 p-4 space-y-2',
+                            openId === example.name ? 'md:col-span-2' : '',
+                        ]"
+                    >
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <div class="font-mono text-sm text-foreground truncate">{{ example.name }}</div>
+                                <div class="text-xs text-muted-foreground mt-0.5">
+                                    {{ formatBytes(example.size) }}
+                                    · <span class="inline-flex items-center gap-1 text-muted-foreground/70">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                        </svg>
+                                        Built-in
+                                    </span>
+                                </div>
+                            </div>
+                            <span class="text-xs text-muted-foreground/70">Read-only</span>
+                        </div>
+                        <details
+                            class="text-xs"
+                            :open="openId === example.name"
+                            @toggle="togglePreview(example.name)"
+                        >
+                            <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
+                            <div v-if="openId === example.name" class="mt-2">
+                                <div
+                                    v-if="loadingName === example.name"
+                                    class="p-2 text-muted-foreground"
+                                >Loading…</div>
+                                <div
+                                    v-else-if="loadError !== null"
+                                    class="p-2 text-destructive"
+                                >{{ loadError }}</div>
+                                <pre
+                                    v-else-if="highlightedByName[example.name] !== undefined"
+                                    class="p-3 bg-background rounded text-xs overflow-x-auto max-h-[32rem] overflow-y-auto"
+                                ><code class="hljs language-typst" v-html="highlightedByName[example.name]"></code></pre>
+                            </div>
+                        </details>
                     </div>
                 </div>
-                <button
-                    v-if="example.origin === 'principal'"
-                    type="button"
-                    class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
-                    :disabled="store.uploading"
-                    @click="confirmAndDelete(example.name)"
-                >Delete</button>
-                <span v-else class="text-xs text-muted-foreground">Built-in</span>
             </div>
-            <details
-                class="text-xs"
-                :open="openId === example.name"
-                @toggle="togglePreview(example.name)"
-            >
-                <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
-                <div v-if="openId === example.name" class="mt-2">
-                    <div
-                        v-if="loadingName === example.name"
-                        class="p-2 text-muted-foreground"
-                    >Loading…</div>
-                    <div
-                        v-else-if="loadError !== null"
-                        class="p-2 text-destructive"
-                    >{{ loadError }}</div>
-                    <pre
-                        v-else-if="highlightedByName[example.name] !== undefined"
-                        class="p-3 bg-muted rounded text-xs overflow-x-auto max-h-[32rem] overflow-y-auto"
-                    ><code class="hljs language-typst" v-html="highlightedByName[example.name]"></code></pre>
-                </div>
-            </details>
-        </div>
+        </template>
     </div>
 </template>

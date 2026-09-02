@@ -46,6 +46,7 @@ import { highlightTypst } from 'highlightjs-typst/highlight'
 import { usePrincipalsStore } from '../stores/principals'
 import { useSourcesStore } from '../stores/sources'
 import type { CompileResult, ImageResource, MediaArchiveImage, PlaygroundSourceSummary } from '../types'
+import OpenPickerModal from './OpenPickerModal.vue'
 
 defineProps<{
     hostContext: import('../shims').PluginHostContext
@@ -80,8 +81,8 @@ This is rendered by ext-typst #v(0.5em) via the plugin.
 
 const STARTER_NAME = 'playground.typ'
 
-const source = ref(STARTER)
-const filename = ref(STARTER_NAME)
+const source = ref('')
+const filename = ref('')
 const currentSourceId = ref<string | null>(null)
 const currentSourceIsDirty = ref(false)
 const format = ref<'pdf' | 'png' | 'svg'>('pdf')
@@ -187,11 +188,7 @@ function pickMediaImage(img: MediaArchiveImage): void {
     closeImagePicker()
 }
 
-async function toggleOpenPicker(): Promise<void> {
-    if (openPickerOpen.value) {
-        openPickerOpen.value = false
-        return
-    }
+async function openPicker(): Promise<void> {
     openPickerOpen.value = true
     pickerOpen.value = false
     if (sourcesStore.sources.length === 0) {
@@ -221,8 +218,13 @@ async function pickExistingSource(summary: PlaygroundSourceSummary): Promise<voi
 }
 
 function startNewSource(): void {
-    source.value = STARTER
-    filename.value = STARTER_NAME
+    // Clear the buffer rather than pre-filling with the starter
+    // example — the user might want to start from scratch, and
+    // "Load example" is one click away when they don't. The
+    // empty state surfaces the Load-example button in the
+    // editor area so the path forward is still obvious.
+    source.value = ''
+    filename.value = ''
     currentSourceId.value = null
     currentSourceIsDirty.value = false
     result.value = null
@@ -230,11 +232,32 @@ function startNewSource(): void {
     diagnostics.value = null
 }
 
+function loadStarter(): void {
+    source.value = STARTER
+    filename.value = STARTER_NAME
+    currentSourceIsDirty.value = false
+    result.value = null
+    error.value = null
+    diagnostics.value = null
+    // Focus the editor so the user can immediately start editing.
+    requestAnimationFrame(() => textareaRef.value?.focus())
+}
+
 async function saveCurrent(): Promise<void> {
     if (currentSourceId.value === null) {
-        // No open file — "Save" is a no-op without a compile. Tell
-        // the user; they can rename + render to create the row.
-        error.value = 'No file is open. Use Render to create a new file, or Open to edit an existing one.'
+        // No row yet — the user has typed into a fresh buffer
+        // (clicked "New" or just landed on the page). Persist via
+        // the create endpoint without paying for a compile.
+        // Conflict (409, same filename) surfaces as a normal
+        // error; the user can rename and try again.
+        const created = await sourcesStore.createSource(filename.value, source.value)
+        if (created !== null) {
+            currentSourceId.value = created.id
+            currentSourceIsDirty.value = false
+            result.value = null
+        } else {
+            error.value = sourcesStore.error ?? 'Failed to save.'
+        }
         return
     }
     const saved = await sourcesStore.saveSource(currentSourceId.value, source.value)
@@ -254,8 +277,21 @@ async function deleteCurrent(): Promise<void> {
     if (!confirmed) return
     try {
         await sourcesStore.removeSource(currentSourceId.value)
-    } catch {
-        error.value = sourcesStore.error ?? 'Failed to delete.'
+    } catch (e) {
+        // The store re-throws after setting its own error message.
+        // If the re-thrown value is an ApiError the store has
+        // already surfaced the server's structured reason; if it's
+        // a raw network error (the most common cause of "Failed to
+        // delete playground source." with no body) we fall through
+        // to a more descriptive message and log the raw error to
+        // the browser console for the operator.
+        if (e instanceof ApiError) {
+            error.value = e.message
+        } else {
+            const raw = e instanceof Error ? e.message : String(e)
+            error.value = `Could not reach the server to delete the file (${raw}). Check the browser console for the full request log.`
+            console.error('typst playground: delete failed', e)
+        }
         return
     }
     startNewSource()
@@ -344,6 +380,18 @@ function isPngOutput(r: CompileResult | null): boolean {
 
 const hasOpenFile = computed(() => currentSourceId.value !== null)
 
+// True when the buffer has edits that aren't reflected in a saved
+// row. Covers both cases:
+//   - new file (no id): any non-empty source or non-empty filename
+//   - existing file (id set): the editor's "dirty" flag is on
+// Drives the "Unsaved" badge next to the filename input.
+const hasUnsavedChanges = computed<boolean>(() => {
+    if (currentSourceId.value === null) {
+        return source.value.trim() !== '' || filename.value.trim() !== ''
+    }
+    return currentSourceIsDirty.value
+})
+
 // Track in-editor edits so the Save button reflects "dirty" state.
 watch(source, () => {
     if (currentSourceId.value !== null) {
@@ -373,7 +421,25 @@ onMounted(() => {
     <div class="space-y-4">
         <div class="rounded-lg border border-border bg-card p-4 space-y-3">
             <div class="flex items-baseline justify-between gap-2 flex-wrap">
-                <label for="typst-filename" class="block text-sm font-medium text-foreground">Filename</label>
+                <div class="flex items-baseline gap-2">
+                    <label for="typst-filename" class="block text-sm font-medium text-foreground">Filename</label>
+                    <span
+                        v-if="hasUnsavedChanges"
+                        class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded border border-amber-500/40 text-amber-700 bg-amber-500/10 dark:text-amber-300"
+                        title="This buffer is not saved yet"
+                    >
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                        Unsaved
+                    </span>
+                    <span
+                        v-else-if="hasOpenFile"
+                        class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded border border-emerald-500/40 text-emerald-700 bg-emerald-500/10 dark:text-emerald-300"
+                        title="This buffer is saved"
+                    >
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                        Saved
+                    </span>
+                </div>
                 <span class="text-xs text-muted-foreground">
                     Compiled by <code class="font-mono">POST /api/v1/typst/compile</code>
                 </span>
@@ -393,7 +459,7 @@ onMounted(() => {
                         type="button"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
                         :disabled="sourcesStore.loading"
-                        @click="toggleOpenPicker"
+                        @click="openPicker"
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -401,32 +467,6 @@ onMounted(() => {
                         Open
                         <span class="text-xs text-muted-foreground">({{ sourcesStore.sources.length }})</span>
                     </button>
-                    <div
-                        v-if="openPickerOpen"
-                        class="absolute right-0 z-10 mt-1 w-72 rounded-md border border-border bg-card shadow-lg max-h-64 overflow-y-auto"
-                    >
-                        <div
-                            v-if="sourcesStore.loading"
-                            class="px-3 py-2 text-xs text-muted-foreground"
-                        >Loading…</div>
-                        <div
-                            v-else-if="sourcesStore.sources.length === 0"
-                            class="px-3 py-2 text-xs text-muted-foreground"
-                        >No saved playground files yet. Render once to create one.</div>
-                        <button
-                            v-for="s in sourcesStore.sources"
-                            :key="s.id"
-                            type="button"
-                            class="block w-full text-left px-3 py-2 text-sm hover:bg-muted border-b border-border last:border-b-0"
-                            @click="pickExistingSource(s)"
-                        >
-                            <div class="font-mono truncate">{{ s.filename }}</div>
-                            <div class="text-[10px] text-muted-foreground tabular-nums">
-                                {{ s.byte_size }} bytes
-                                <span v-if="s.updated_at"> · updated {{ s.updated_at }}</span>
-                            </div>
-                        </button>
-                    </div>
                 </div>
                 <button
                     type="button"
@@ -442,8 +482,8 @@ onMounted(() => {
                 <button
                     type="button"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
-                    :disabled="!hasOpenFile || sourcesStore.saving"
-                    :title="hasOpenFile ? 'Persist source edits without re-rendering' : 'Open an existing file to save'"
+                    :disabled="sourcesStore.saving"
+                    :title="hasOpenFile ? 'Persist source edits without re-rendering' : 'Save the current buffer as a new playground file'"
                     @click="saveCurrent"
                 >
                     {{ sourcesStore.saving ? 'Saving…' : 'Save' }}
@@ -463,7 +503,7 @@ onMounted(() => {
             </div>
 
             <label for="typst-source" class="block text-sm font-medium text-foreground pt-2">Typst source</label>
-            <div class="typst-editor rounded-md border border-input bg-background focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
+            <div class="typst-editor rounded-md border border-input bg-background focus-within:border-ring focus-within:ring-1 focus:ring-ring">
                 <pre
                     ref="highlightRef"
                     class="typst-editor__highlight"
@@ -479,8 +519,30 @@ onMounted(() => {
                     autocomplete="off"
                     autocorrect="off"
                     autocapitalize="off"
+                    placeholder="Type Typst markup, or click ‘Load example’ to start from a template…"
                     @scroll="onEditorScroll"
                 ></textarea>
+                <div
+                    v-if="source === '' && filename === '' && !result"
+                    class="absolute inset-0 flex items-center justify-center pointer-events-none"
+                >
+                    <div class="pointer-events-auto flex flex-col items-center gap-2 px-4 py-3 rounded-md border border-border bg-card/95 shadow-sm">
+                        <p class="text-xs text-muted-foreground text-center">Empty playground buffer.</p>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted"
+                            @click="loadStarter"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <line x1="9" y1="13" x2="15" y2="13" />
+                                <line x1="9" y1="17" x2="13" y2="17" />
+                            </svg>
+                            Load example
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="flex items-center justify-between gap-3 flex-wrap">
                 <fieldset class="flex items-center gap-3 text-sm">
@@ -585,6 +647,14 @@ onMounted(() => {
                 </div>
             </div>
         </div>
+
+        <OpenPickerModal
+            :open="openPickerOpen"
+            :sources="sourcesStore.sources"
+            :loading="sourcesStore.loading"
+            @close="closeOpenPicker"
+            @pick="pickExistingSource"
+        />
 
         <div
             v-if="error"
