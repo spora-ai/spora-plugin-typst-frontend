@@ -17,6 +17,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useResourceStore } from '../stores/resources'
 import { useImagesStore } from '../stores/images'
+import { useSourcesStore } from '../stores/sources'
 import { usePrincipalsStore } from '../stores/principals'
 import FontUploader from '../components/FontUploader.vue'
 import FontList from '../components/FontList.vue'
@@ -49,26 +50,30 @@ const props = defineProps<{
 const activeTab = ref<Tab>('fonts')
 const resourceStore = useResourceStore()
 const imagesStore = useImagesStore()
+const sourcesStore = useSourcesStore()
 const principalsStore = usePrincipalsStore()
 
-// Wire the chip-row selection into both the resource and image
-// stores. The watchers inside each store re-fetch on change.
+// Wire the chip-row selection into the resource, image, and
+// playground-source stores. The watchers inside each store
+// re-fetch on change.
 watch(
     () => principalsStore.selectedPrincipalId,
     (id) => {
         resourceStore.setPrincipalId(id)
         imagesStore.setPrincipalId(id)
+        sourcesStore.setPrincipalId(id)
     },
     { immediate: true },
 )
 
 const combinedError = computed<string | null>(() =>
-    resourceStore.error ?? imagesStore.error ?? principalsStore.error ?? null,
+    resourceStore.error ?? imagesStore.error ?? sourcesStore.error ?? principalsStore.error ?? null,
 )
 
 function dismissError(): void {
     resourceStore.clearError()
     imagesStore.clearError()
+    sourcesStore.clearError()
     principalsStore.clearError()
 }
 

@@ -16,7 +16,7 @@
  * the resources store.
  */
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import * as sourcesApi from '../api/sources'
 import type { PlaygroundSource, PlaygroundSourceSummary } from '../types'
@@ -26,12 +26,21 @@ export const useSourcesStore = defineStore('typst-sources', () => {
     const loading = ref(false)
     const saving = ref(false)
     const error = ref<string | null>(null)
+    // The principal the chip row is currently scoped to. Setter is
+    // public so the page can wire `usePrincipalsStore.selectedPrincipalId`
+    // into it. Mirrors the same shape as the resource and image
+    // stores so the chip row's wiring is symmetric.
+    const principalId = ref<number | null>(null)
+
+    function setPrincipalId(id: number | null): void {
+        principalId.value = id
+    }
 
     async function loadSources(): Promise<void> {
         loading.value = true
         error.value = null
         try {
-            sources.value = await sourcesApi.listSources()
+            sources.value = await sourcesApi.listSources(principalId.value)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load playground sources.'
         } finally {
@@ -42,7 +51,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
     async function openSource(id: string): Promise<PlaygroundSource | null> {
         error.value = null
         try {
-            return await sourcesApi.getSource(id)
+            return await sourcesApi.getSource(id, principalId.value)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to open playground source.'
             return null
@@ -53,7 +62,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
         saving.value = true
         error.value = null
         try {
-            const saved = await sourcesApi.updateSource(id, content)
+            const saved = await sourcesApi.updateSource(id, content, principalId.value)
             // The saved row's summary needs to land in `sources.value`
             // so the picker reflects the new mtime; the in-memory
             // entry is updated in place to avoid a full reload.
@@ -96,7 +105,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
         saving.value = true
         error.value = null
         try {
-            await sourcesApi.deleteSource(id)
+            await sourcesApi.deleteSource(id, principalId.value)
             sources.value = sources.value.filter((s) => s.id !== id)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete playground source.'
@@ -110,11 +119,23 @@ export const useSourcesStore = defineStore('typst-sources', () => {
         error.value = null
     }
 
+    // Re-fetch when the principal chip changes (mirrors the resource
+    // and image stores). The watcher only kicks off a reload when
+    // the listing is already populated so the initial mount of the
+    // Playground doesn't trigger a double-load.
+    watch(principalId, async () => {
+        if (sources.value.length > 0) {
+            await loadSources()
+        }
+    })
+
     return {
         sources,
         loading,
         saving,
         error,
+        principalId,
+        setPrincipalId,
         loadSources,
         openSource,
         saveSource,
