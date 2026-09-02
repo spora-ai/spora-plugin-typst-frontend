@@ -15,7 +15,7 @@
         "clean": "node scripts/clean.js"
     },
     "dependencies": {
-        "highlight-typst": "file:../highlight-typst",
+        "highlightjs-typst": "file:../highlightjs-typst",
         "highlight.js": "^11.12.0",
         "lucide-vue-next": "^0.487.0",
         "pinia": "^2.3.0",
