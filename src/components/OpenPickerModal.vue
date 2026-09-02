@@ -36,11 +36,14 @@ const emit = defineEmits<{
 }>()
 
 const search = ref('')
-const sortBy = ref<'filename' | 'updated_at' | 'byte_size'>('updated_at')
-const sortDir = ref<'asc' | 'desc'>('desc')
+type SortField = 'filename' | 'updated_at' | 'byte_size'
+type SortDir = 'asc' | 'desc'
+const sortBy = ref<SortField>('updated_at')
+const sortDir = ref<SortDir>('desc')
 const activeIdx = ref(0)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const listRef = ref<HTMLDivElement | null>(null)
+const dialogRef = ref<HTMLDialogElement | null>(null)
 
 const filtered = computed<PlaygroundSourceSummary[]>(() => {
     const q = search.value.trim().toLowerCase()
@@ -98,11 +101,9 @@ function scrollActiveIntoView(): void {
 
 function onKey(e: KeyboardEvent): void {
     if (!props.open) return
-    if (e.key === 'Escape') {
-        e.preventDefault()
-        close()
-        return
-    }
+    // ESC is handled natively by <dialog> via showModal() — it calls
+    // .close() and fires the `close` event, which we forward to the
+    // parent. Don't intercept it here or we'd double-close.
     if (document.activeElement === searchInputRef.value) {
         if (e.key === 'ArrowDown') {
             e.preventDefault()
@@ -145,7 +146,7 @@ function toggleSortDir(): void {
     sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
 }
 
-function setSort(field: 'filename' | 'updated_at' | 'byte_size'): void {
+function setSort(field: SortField): void {
     if (sortBy.value === field) {
         toggleSortDir()
     } else {
@@ -154,7 +155,7 @@ function setSort(field: 'filename' | 'updated_at' | 'byte_size'): void {
     }
 }
 
-function sortArrow(field: 'filename' | 'updated_at' | 'byte_size'): string {
+function sortArrow(field: SortField): string {
     if (sortBy.value !== field) return ''
     return sortDir.value === 'asc' ? '▲' : '▼'
 }
@@ -180,9 +181,30 @@ watch(() => props.open, (open) => {
     if (open) {
         search.value = ''
         activeIdx.value = 0
-        void nextTick(() => searchInputRef.value?.focus())
+        void nextTick(() => {
+            dialogRef.value?.showModal()
+            searchInputRef.value?.focus()
+        })
     }
 })
+
+function onDialogNativeClose(): void {
+    // Native <dialog> ESC / form-method="dialog" calls .close()
+    // and dispatches the close event. Mirror that back through the
+    // component's emit so the parent (CompileForm) clears its
+    // `openPickerOpen` state and tears down the picker.
+    emit('close')
+}
+
+function onDialogClick(e: MouseEvent): void {
+    // Native <dialog> doesn't close on backdrop click by default.
+    // The click on the dialog element itself (not a descendant) is
+    // the backdrop area; any other target is content. Match the
+    // behaviour of the previous absolute-positioned backdrop div.
+    if (e.target === dialogRef.value) {
+        close()
+    }
+}
 
 onMounted(() => {
     document.addEventListener('keydown', onKey)
@@ -194,121 +216,137 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Teleport to="body">
+  <Teleport to="body">
+    <dialog
+      v-if="open"
+      ref="dialogRef"
+      class="fixed inset-0 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
+      aria-label="Open playground file"
+      @close="onDialogNativeClose"
+      @click="onDialogClick"
+    >
+      <div
+        class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
+        style="max-height: min(640px, calc(100vh - 2rem))"
+        tabindex="-1"
+        @keydown="onListKey"
+      >
+        <header class="flex items-center gap-2 p-3 border-b border-border">
+          <input
+            id="open-picker-search"
+            ref="searchInputRef"
+            v-model="search"
+            type="text"
+            placeholder="Search files by name… (press / to focus)"
+            aria-label="Search playground files"
+            class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm focus:border-ring focus:ring-1 focus:ring-ring outline-none"
+            spellcheck="false"
+            autocomplete="off"
+          >
+          <button
+            type="button"
+            class="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+            title="Close (Esc)"
+            @click="close"
+          >
+            Esc
+          </button>
+        </header>
+
         <div
-            v-if="open"
-            class="fixed inset-0 z-50 flex items-center justify-center p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Open playground file"
+          v-if="sources.length > 0"
+          class="grid gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border select-none"
+          style="grid-template-columns: 1fr 5rem 9rem;"
         >
-            <div
-                class="absolute inset-0 bg-black/40"
-                @click="close"
-            />
-            <div
-                class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
-                style="max-height: min(640px, calc(100vh - 2rem))"
-                @keydown="onListKey"
-                tabindex="-1"
-            >
-                <header class="flex items-center gap-2 p-3 border-b border-border">
-                    <input
-                        ref="searchInputRef"
-                        v-model="search"
-                        type="text"
-                        placeholder="Search files by name… (press / to focus)"
-                        class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm focus:border-ring focus:ring-1 focus:ring-ring outline-none"
-                        spellcheck="false"
-                        autocomplete="off"
-                    />
-                    <button
-                        type="button"
-                        class="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-                        title="Close (Esc)"
-                        @click="close"
-                    >Esc</button>
-                </header>
-
-                <div
-                    v-if="sources.length > 0"
-                    class="grid gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border select-none"
-                    style="grid-template-columns: 1fr 5rem 9rem;"
-                >
-                    <button
-                        type="button"
-                        class="text-left hover:text-foreground"
-                        @click="setSort('filename')"
-                    >File {{ sortArrow('filename') }}</button>
-                    <button
-                        type="button"
-                        class="text-right hover:text-foreground"
-                        @click="setSort('byte_size')"
-                    >Size {{ sortArrow('byte_size') }}</button>
-                    <button
-                        type="button"
-                        class="text-right hover:text-foreground"
-                        @click="setSort('updated_at')"
-                    >Updated {{ sortArrow('updated_at') }}</button>
-                </div>
-
-                <div
-                    ref="listRef"
-                    class="flex-1 overflow-y-auto"
-                >
-                    <div
-                        v-if="loading"
-                        class="px-3 py-6 text-center text-sm text-muted-foreground"
-                    >Loading…</div>
-                    <div
-                        v-else-if="sources.length === 0"
-                        class="px-3 py-6 text-center text-sm text-muted-foreground"
-                    >No saved playground files yet. Render once to create one.</div>
-                    <div
-                        v-else-if="filtered.length === 0"
-                        class="px-3 py-6 text-center text-sm text-muted-foreground"
-                    >No files match “{{ search }}”.</div>
-                    <button
-                        v-for="(s, idx) in filtered"
-                        v-else
-                        :key="s.id"
-                        :data-source-id="s.id"
-                        type="button"
-                        :class="[
-                            'grid gap-3 items-center w-full px-3 py-1 text-sm text-left border-b border-border last:border-b-0',
-                            idx === activeIdx
-                                ? 'bg-primary/10 text-foreground'
-                                : 'hover:bg-muted text-foreground',
-                        ]"
-                        style="grid-template-columns: 1fr 5rem 9rem;"
-                        @click="pick(s)"
-                        @mouseenter="activeIdx = idx"
-                    >
-                        <span class="font-mono truncate min-w-0" :title="s.filename">{{ s.filename }}</span>
-                        <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatBytes(s.byte_size) }}</span>
-                        <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatUpdated(s.updated_at) }}</span>
-                    </button>
-                </div>
-
-                <footer class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-[10px] text-muted-foreground">
-                    <span>{{ filtered.length }} of {{ sources.length }} files</span>
-                    <span class="flex items-center gap-4">
-                        <span class="inline-flex items-center gap-1.5">
-                            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">/</kbd>
-                            <span>search</span>
-                        </span>
-                        <span class="inline-flex items-center gap-1.5">
-                            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▲</kbd>
-                            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▼</kbd>
-                            <span>move</span>
-                        </span>
-                        <span class="inline-flex items-center gap-1.5">
-                            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">↵</kbd>
-                            <span>open</span>
-                        </span>
-                    </span>
-                </footer>
-            </div>
+          <button
+            type="button"
+            class="text-left hover:text-foreground"
+            @click="setSort('filename')"
+          >
+            File {{ sortArrow('filename') }}
+          </button>
+          <button
+            type="button"
+            class="text-right hover:text-foreground"
+            @click="setSort('byte_size')"
+          >
+            Size {{ sortArrow('byte_size') }}
+          </button>
+          <button
+            type="button"
+            class="text-right hover:text-foreground"
+            @click="setSort('updated_at')"
+          >
+            Updated {{ sortArrow('updated_at') }}
+          </button>
         </div>
-    </Teleport>
+
+        <div
+          ref="listRef"
+          class="flex-1 overflow-y-auto"
+        >
+          <div
+            v-if="loading"
+            class="px-3 py-6 text-center text-sm text-muted-foreground"
+          >
+            Loading…
+          </div>
+          <div
+            v-else-if="sources.length === 0"
+            class="px-3 py-6 text-center text-sm text-muted-foreground"
+          >
+            No saved playground files yet. Render once to create one.
+          </div>
+          <div
+            v-else-if="filtered.length === 0"
+            class="px-3 py-6 text-center text-sm text-muted-foreground"
+          >
+            No files match “{{ search }}”.
+          </div>
+          <button
+            v-for="(s, idx) in filtered"
+            v-else
+            :key="s.id"
+            :data-source-id="s.id"
+            type="button"
+            :class="[
+              'grid gap-3 items-center w-full px-3 py-1 text-sm text-left border-b border-border last:border-b-0',
+              idx === activeIdx
+                ? 'bg-primary/10 text-foreground'
+                : 'hover:bg-muted text-foreground',
+            ]"
+            style="grid-template-columns: 1fr 5rem 9rem;"
+            @click="pick(s)"
+            @mouseenter="activeIdx = idx"
+          >
+            <span
+              class="font-mono truncate min-w-0"
+              :title="s.filename"
+            >{{ s.filename }}</span>
+            <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatBytes(s.byte_size) }}</span>
+            <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatUpdated(s.updated_at) }}</span>
+          </button>
+        </div>
+
+        <footer class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-[10px] text-muted-foreground">
+          <span>{{ filtered.length }} of {{ sources.length }} files</span>
+          <span class="flex items-center gap-4">
+            <span class="inline-flex items-center gap-1.5">
+              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">/</kbd>
+              <span>search</span>
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▲</kbd>
+              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▼</kbd>
+              <span>move</span>
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">↵</kbd>
+              <span>open</span>
+            </span>
+          </span>
+        </footer>
+      </div>
+    </dialog>
+  </Teleport>
 </template>

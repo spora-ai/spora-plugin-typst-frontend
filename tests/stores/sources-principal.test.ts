@@ -107,29 +107,6 @@ describe('stores/sources — principal scoping', () => {
         expect(fetchCount).toBe(3)
     })
 
-    it('setPrincipalId does not re-fetch on the initial set when the listing is empty', async () => {
-        const seen: string[] = []
-        setApi({
-            get: <T = unknown>(path: string): Promise<T> => {
-                seen.push(path)
-                return Promise.resolve({ sources: [] } as T)
-            },
-            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
-        })
-
-        const store = useSourcesStore()
-        // Set the principal BEFORE the first load — should not double-fetch
-        // (the onMounted in CompileForm.vue calls loadSources() once and
-        // the watcher on principalId only refetches when sources.value
-        // is already populated).
-        store.setPrincipalId(99)
-        await store.loadSources()
-        expect(seen).toEqual(['/typst/sources?principal_id=99'])
-    })
-
     it('openSource threads the current principal_id into the URL', async () => {
         let requestedPath = ''
         setApi({

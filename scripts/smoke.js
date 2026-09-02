@@ -37,7 +37,7 @@ try {
 
 const globalName = 'SporaAppTypst'
 
-const bindingRe = new RegExp(`(?:^|;|\\n)\\s*(?:var\\s+${globalName}\\s*=|window\\.${globalName}\\s*=)`, 'm')
+const bindingRe = new RegExp(String.raw`(?:^|;|\n)\s*(?:var\s+${globalName}\s*=|window\.${globalName}\s*=)`, 'm')
 if (!bindingRe.test(txt)) {
     failures.push(`bundle does not declare ${globalName} via \`var ${globalName}=\` or \`window.${globalName}=\``)
 }

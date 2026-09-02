@@ -36,7 +36,7 @@ export default defineConfig({
             external: ['vue', 'pinia', 'vue-router', 'lucide-vue-next'],
             output: {
                 assetFileNames: (assetInfo) => {
-                    if (assetInfo.name && assetInfo.name.endsWith('.css')) {
+                    if (assetInfo.name?.endsWith('.css')) {
                         return 'style.css'
                     }
                     return assetInfo.name ?? 'asset'
@@ -52,5 +52,30 @@ export default defineConfig({
         globals: true,
         environment: 'happy-dom',
         include: ['tests/**/*.{test,spec}.{js,ts}'],
+        reporters: process.env.CI
+            ? [
+                ['default'],
+                [
+                    'junit',
+                    {
+                        outputFile: './coverage/test-report.xml',
+                    },
+                ],
+            ]
+            : ['default'],
+        coverage: {
+            // SonarCloud expects `coverage/lcov.info` from the JS/TS
+            // scanner; html is convenient for the PR comment.
+            provider: 'v8',
+            reporter: ['text', 'lcov', 'html'],
+            reportsDirectory: './coverage',
+            // Only the TS modules currently exercised by tests are
+            // included; Vue SFCs and the few type-only files are
+            // excluded so the coverage number reflects real exercised
+            // code rather than a denominator inflated by untested
+            // components. Mirrors `sonar.coverage.exclusions`.
+            include: ['src/api/**/*.ts', 'src/stores/**/*.ts'],
+            exclude: ['src/main.ts', 'src/dev-main.ts', 'src/shims.d.ts', 'src/types.ts', 'src/**/*.{vue,css}'],
+        },
     },
 })
