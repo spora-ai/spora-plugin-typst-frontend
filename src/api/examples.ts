@@ -12,7 +12,7 @@
  * `/typst/examples` (matching the backend controller) — operators
  * only see the distinction via the UI's separate "Examples" tab.
  */
-import { getApi } from './client'
+import { getApi, fetchText } from './client'
 import type { ExampleResource } from '../types'
 
 export async function listExamples(principalId?: number): Promise<ExampleResource[]> {
@@ -37,11 +37,11 @@ export async function deleteExample(name: string): Promise<void> {
 
 /**
  * Read an example's source bytes. The controller responds with
- * `Content-Type: text/plain; charset=utf-8` so the typed `get<string>`
- * returns the file body directly. Used by the "View source" preview
- * in the Examples card list.
+ * `Content-Type: text/plain; charset=utf-8` so we use {@see fetchText}
+ * instead of `api.get<string>()` — the host's JSON parser would
+ * otherwise synthesise an `INVALID_JSON` envelope and mask the
+ * body. Used by the "View source" preview in the Examples card list.
  */
 export async function getExample(name: string): Promise<string> {
-    const api = getApi()
-    return await api.get<string>(`/typst/examples/${encodeURIComponent(name)}`)
+    return await fetchText(`/typst/examples/${encodeURIComponent(name)}`)
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setApi, ApiError } from '../../src/api/client'
 import { getTemplate, listTemplates, uploadTemplate, deleteTemplate } from '../../src/api/templates'
 import type { PluginHostContext } from '../../src/shims'
@@ -12,10 +12,11 @@ import type { PluginHostContext } from '../../src/shims'
  *   POST   /typst/templates          (upload)
  *   DELETE /typst/templates/{name}   (remove)
  *
- * The previous version of the TemplateList component called the
- * examples endpoint (`/api/v1/typst/examples/{name}`) instead of
- * templates — that bug is what motivated adding `getTemplate` to
- * the typed client so the wrong-URL mistake can't recur.
+ * `getTemplate` reads `text/plain` and so uses the plugin-local
+ * `fetchText` helper (which calls `globalThis.fetch` directly).
+ * The list / upload / delete methods go through the JSON-only
+ * host API client. Tests stub `globalThis.fetch` to avoid
+ * hitting a real server.
  */
 
 function makeStubApi(handlers: Partial<Record<string, (body?: unknown) => unknown>> = {}): PluginHostContext['api'] {
@@ -46,47 +47,80 @@ function makeStubApi(handlers: Partial<Record<string, (body?: unknown) => unknow
     }
 }
 
+function stubFetch(handler: (url: string) => Response | Promise<Response>): void {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        return await handler(url)
+    }))
+}
+
 beforeEach(() => {
     setApi(makeStubApi())
 })
 
+afterEach(() => {
+    vi.unstubAllGlobals()
+})
+
 describe('api/templates', () => {
     it('getTemplate reads from /typst/templates/{name} (not the examples endpoint)', async () => {
-        let requestedPath = ''
-        setApi({
-            get: <T = unknown>(path: string): Promise<T> => {
-                requestedPath = path
-                return Promise.resolve('= Hello\n' as T)
-            },
-            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        let requestedUrl = ''
+        stubFetch((url) => {
+            requestedUrl = url
+            return new Response('= Hello\n', { status: 200 })
         })
 
         const source = await getTemplate('letter.typ')
         expect(source).toBe('= Hello\n')
-        expect(requestedPath).toBe('/typst/templates/letter.typ')
+        expect(requestedUrl).toBe('/api/v1/typst/templates/letter.typ')
         // Lock in: the wrong endpoint would be /typst/examples/letter.typ
         // — the bug that motivated this test.
-        expect(requestedPath).not.toContain('/examples/')
+        expect(requestedUrl).not.toContain('/examples/')
     })
 
     it('getTemplate URL-encodes the basename', async () => {
-        let requestedPath = ''
-        setApi({
-            get: <T = unknown>(path: string): Promise<T> => {
-                requestedPath = path
-                return Promise.resolve('' as T)
-            },
-            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        let requestedUrl = ''
+        stubFetch((url) => {
+            requestedUrl = url
+            return new Response('', { status: 200 })
         })
 
         await getTemplate('Invoice Q1 2026.typ')
-        expect(requestedPath).toBe('/typst/templates/Invoice%20Q1%202026.typ')
+        expect(requestedUrl).toBe('/api/v1/typst/templates/Invoice%20Q1%202026.typ')
+    })
+
+    it('getTemplate surfaces ApiError on a 404 with the server message', async () => {
+        stubFetch(() => new Response(
+            JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Template "ghost.typ" not found' } }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+        ))
+
+        await expect(getTemplate('ghost.typ')).rejects.toBeInstanceOf(ApiError)
+        try {
+            await getTemplate('ghost.typ')
+        } catch (e) {
+            expect(e).toBeInstanceOf(ApiError)
+            if (e instanceof ApiError) {
+                expect(e.code).toBe('NOT_FOUND')
+                expect(e.message).toContain('ghost.typ')
+                expect(e.status).toBe(404)
+            }
+        }
+    })
+
+    it('getTemplate falls back to HTTP_ERROR when the failure body is not JSON', async () => {
+        stubFetch(() => new Response('gateway exploded', { status: 502 }))
+
+        try {
+            await getTemplate('letter.typ')
+            expect.fail('expected ApiError')
+        } catch (e) {
+            expect(e).toBeInstanceOf(ApiError)
+            if (e instanceof ApiError) {
+                expect(e.code).toBe('HTTP_ERROR')
+                expect(e.status).toBe(502)
+            }
+        }
     })
 
     it('listTemplates hits /typst/templates without a principal filter by default', async () => {
@@ -161,17 +195,5 @@ describe('api/templates', () => {
 
         await deleteTemplate('letter.typ')
         expect(deletedPath).toBe('/typst/templates/letter.typ')
-    })
-
-    it('getTemplate surfaces ApiError on a 404', async () => {
-        setApi({
-            get: () => Promise.reject(new ApiError('missing', 'NOT_FOUND', 404)),
-            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
-            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
-        })
-
-        await expect(getTemplate('ghost.typ')).rejects.toBeInstanceOf(ApiError)
     })
 })

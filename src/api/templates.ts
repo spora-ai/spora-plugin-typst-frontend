@@ -13,7 +13,7 @@
  * keeps a parallel `/typst/examples` endpoint for the smaller
  * pattern-snippet kind — {@see ./examples}.
  */
-import { getApi } from './client'
+import { getApi, fetchText } from './client'
 import type { TemplateResource } from '../types'
 
 export async function listTemplates(principalId?: number): Promise<TemplateResource[]> {
@@ -27,13 +27,14 @@ export async function listTemplates(principalId?: number): Promise<TemplateResou
 
 /**
  * Read a template's source bytes. The controller responds with
- * `Content-Type: text/plain; charset=utf-8` so the typed `get<string>`
- * returns the file body directly. Used by the "View source" preview
- * in the Templates card list.
+ * `Content-Type: text/plain; charset=utf-8` so we use {@see fetchText}
+ * instead of `api.get<string>()` — the host's JSON parser would
+ * otherwise synthesise an `INVALID_JSON` envelope and mask the
+ * body. Used by the "View source" preview in the Templates card
+ * list.
  */
 export async function getTemplate(name: string): Promise<string> {
-    const api = getApi()
-    return await api.get<string>(`/typst/templates/${encodeURIComponent(name)}`)
+    return await fetchText(`/typst/templates/${encodeURIComponent(name)}`)
 }
 
 export async function uploadTemplate(name: string, content: string): Promise<TemplateResource> {
