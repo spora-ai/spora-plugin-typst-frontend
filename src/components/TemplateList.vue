@@ -28,7 +28,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import { getTemplate } from '../api/templates'
-import { highlightTypst } from '../typst-highlight'
+import { highlightTypst } from 'highlight-typst'
 import { useResourceStore } from '../stores/resources'
 
 const store = useResourceStore()

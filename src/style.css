@@ -28,8 +28,8 @@ body,
 }
 
 /**
- * Typst source highlighting — emitted by `highlightTypst()` in
- * `src/typst-highlight.ts`. hljs wraps the result in
+ * Typst source highlighting - emitted by `highlightTypst()` from
+ * the `highlight-typst` npm package. hljs wraps the result in
  * `<span class="hljs">…</span>` and tints every recognised token
  * with a `.typst-<class>` span; we map those classes to the
  * plugin's muted palette so the highlighted source blends into
