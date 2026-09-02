@@ -2,14 +2,13 @@
 /**
  * Grid view of the principal's image library.
  *
- * Each card renders a thumbnail (`<img src={asset_url}>`), the
+ * Each card renders a thumbnail (`<img :src="image.url">`), the
  * filename, mime + size, a "Copy URL" button (for use in
  * `#image("…")` source), and a Delete button.
  *
  * Origin is implicit — every image in this view is principal-owned
- * (skill-shipped images don't exist on this side of the plugin
- * since images are operator assets by definition; tier-1 fonts
- * exist, tier-1 images don't).
+ * (skill-shipped images don't exist on this side of the plugin:
+ * tier-1 fonts and templates exist, tier-1 images don't).
  */
 import { onMounted } from 'vue'
 import { useImagesStore } from '../stores/images'
@@ -40,10 +39,10 @@ async function copyUrl(url: string): Promise<void> {
     }
 }
 
-async function confirmAndDelete(id: string, filename: string): Promise<void> {
+async function confirmAndDelete(name: string, filename: string): Promise<void> {
     if (!confirm(`Delete image "${filename}"? This cannot be undone.`)) return
     try {
-        await store.removeImage(id)
+        await store.removeImage(name)
     } catch {
         // store.error already populated
     }
@@ -65,38 +64,38 @@ onMounted(() => {
             class="col-span-full text-center text-muted-foreground py-6"
         >No images uploaded yet. Drop a PNG / JPEG / WebP / SVG file above.</div>
         <div
-            v-for="image in store.images"
-            :key="image.id"
+            v-for="image in (store.images ?? [])"
+            :key="image.name"
             class="rounded-lg border border-border bg-card overflow-hidden flex flex-col"
         >
             <div class="aspect-square bg-muted flex items-center justify-center">
                 <img
-                    :src="image.asset_url"
-                    :alt="image.filename"
+                    :src="image.url"
+                    :alt="image.name"
                     class="max-w-full max-h-full object-contain"
                     loading="lazy"
                 />
             </div>
             <div class="p-3 flex-1 flex flex-col gap-2">
                 <div class="min-w-0">
-                    <div class="font-mono text-xs text-foreground truncate" :title="image.filename">
-                        {{ image.filename }}
+                    <div class="font-mono text-xs text-foreground truncate" :title="image.name">
+                        {{ image.name }}
                     </div>
                     <div class="text-xs text-muted-foreground mt-0.5">
-                        {{ image.mime_type }} · {{ formatBytes(image.byte_size) }}
+                        {{ image.mime }} · {{ formatBytes(image.size) }}
                     </div>
                 </div>
                 <div class="flex items-center justify-between gap-2 mt-auto">
                     <button
                         type="button"
                         class="text-xs font-medium text-primary hover:text-primary/80"
-                        @click="copyUrl(image.asset_url)"
+                        @click="copyUrl(image.url)"
                     >Copy URL</button>
                     <button
                         type="button"
                         class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
                         :disabled="store.uploading"
-                        @click="confirmAndDelete(image.id, image.filename)"
+                        @click="confirmAndDelete(image.name, image.name)"
                     >Delete</button>
                 </div>
             </div>

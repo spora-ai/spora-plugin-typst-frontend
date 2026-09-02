@@ -20,14 +20,23 @@
  * so the operator can drop the result straight back into Typst
  * source.
  *
+ * The image picker pulls from two sources:
+ *   - **Plugin images** (`/api/v1/typst/images/{name}`) — the
+ *     principal's filesystem-backed library
+ *   - **Media archive** (`/api/v1/assets/{uuid}.{ext}`) — images
+ *     uploaded by any plugin/agent
+ * Picking either inserts the right `#image("…")` URL at the cursor.
+ *
  * The placeholder source ships with a commented `#image("/api/v1/...")`
- * line so the URL convention is visible on first open — the
- * canonical asset URL is the same shape the playground returns.
+ * line so the URL convention is visible on first open.
  */
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ApiError } from '../api/client'
 import { compileTypst, imageSnippet } from '../api/compile'
-import type { CompileResult } from '../types'
+import { listImages } from '../api/images'
+import { listMediaArchiveImages } from '../api/media-archive'
+import { usePrincipalsStore } from '../stores/principals'
+import type { CompileResult, ImageResource, MediaArchiveImage } from '../types'
 
 defineProps<{
     hostContext: import('../shims').PluginHostContext
@@ -51,8 +60,12 @@ This is rendered by ext-typst #v(0.5em) via the plugin.
 )
 
 // Reference an image you uploaded via the Images tab — the
-// canonical URL is /api/v1/assets/<uuid>.<ext>. Drop one in here
-// after uploading:
+// canonical URL is /api/v1/typst/images/<basename>.<ext>.
+// Drop one in here after uploading:
+// #image("/api/v1/typst/images/REPLACE-WITH-NAME.png", width: 80%)
+
+// Or reference a media-archive image (cross-plugin). The
+// /api/v1/assets/<uuid>.<ext> URL is what #image() consumes:
 // #image("/api/v1/assets/REPLACE-WITH-UUID.png", width: 80%)
 `
 
@@ -62,6 +75,69 @@ const busy = ref(false)
 const result = ref<CompileResult | null>(null)
 const error = ref<string | null>(null)
 const diagnostics = ref<string[] | null>(null)
+
+const principalsStore = usePrincipalsStore()
+
+// Image picker state
+const pickerOpen = ref(false)
+const pickerTab = ref<'plugin' | 'media'>('plugin')
+const pickerLoading = ref(false)
+const pluginImages = ref<ImageResource[]>([])
+const mediaImages = ref<MediaArchiveImage[]>([])
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+
+async function loadPickerImages(): Promise<void> {
+    pickerLoading.value = true
+    try {
+        const principalId = principalsStore.selectedPrincipalId ?? undefined
+        const [plugin, media] = await Promise.all([
+            listImages(principalId).catch(() => []),
+            listMediaArchiveImages(principalId).catch(() => []),
+        ])
+        pluginImages.value = plugin
+        mediaImages.value = media
+    } finally {
+        pickerLoading.value = false
+    }
+}
+
+async function openPicker(): Promise<void> {
+    pickerOpen.value = !pickerOpen.value
+    if (pickerOpen.value) {
+        await loadPickerImages()
+    }
+}
+
+function closePicker(): void {
+    pickerOpen.value = false
+}
+
+function insertAtCursor(snippet: string): void {
+    const ta = textareaRef.value
+    if (!ta) {
+        // Fallback: append to end
+        source.value = source.value + '\n' + snippet + '\n'
+        return
+    }
+    const start = ta.selectionStart ?? source.value.length
+    const end = ta.selectionEnd ?? source.value.length
+    source.value = source.value.slice(0, start) + snippet + source.value.slice(end)
+    // Restore caret just after the inserted text
+    requestAnimationFrame(() => {
+        ta.focus()
+        ta.setSelectionRange(start + snippet.length, start + snippet.length)
+    })
+}
+
+function pickPluginImage(img: ImageResource): void {
+    insertAtCursor(`#image("${img.url}", width: 80%)\n`)
+    closePicker()
+}
+
+function pickMediaImage(img: MediaArchiveImage): void {
+    insertAtCursor(`#image("${img.asset_url}", width: 80%)\n`)
+    closePicker()
+}
 
 async function render(): Promise<void> {
     busy.value = true
@@ -88,7 +164,6 @@ async function copyToClipboard(text: string): Promise<boolean> {
         await navigator.clipboard.writeText(text)
         return true
     } catch {
-        // Fallback path mirrors ImageList's approach.
         const textarea = document.createElement('textarea')
         textarea.value = text
         textarea.style.position = 'fixed'
@@ -137,6 +212,12 @@ function parseDiagnostics(message: string): string[] {
 function isPngOutput(r: CompileResult | null): boolean {
     return r?.format === 'png'
 }
+
+onMounted(() => {
+    // Eagerly fetch the picker so the first click is snappy. The
+    // picker only opens on user click; this is just a prefetch.
+    loadPickerImages().catch(() => { /* ignored — picker re-fetches on open */ })
+})
 </script>
 
 <template>
@@ -150,6 +231,7 @@ function isPngOutput(r: CompileResult | null): boolean {
             </div>
             <textarea
                 id="typst-source"
+                ref="textareaRef"
                 v-model="source"
                 rows="14"
                 class="w-full font-mono text-xs leading-snug p-3 rounded-md border border-input bg-background text-foreground focus:border-ring focus:ring-1 focus:ring-ring outline-none"
@@ -173,14 +255,90 @@ function isPngOutput(r: CompileResult | null): boolean {
                         <span class="uppercase text-xs font-medium">{{ opt }}</span>
                     </label>
                 </fieldset>
-                <button
-                    type="button"
-                    class="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-                    :disabled="busy"
-                    @click="render"
-                >
-                    {{ busy ? 'Rendering…' : 'Render' }}
-                </button>
+                <div class="flex items-center gap-2">
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
+                        :disabled="busy"
+                        @click="openPicker"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <polyline points="21 15 16 10 5 21" />
+                        </svg>
+                        Insert image
+                    </button>
+                    <button
+                        type="button"
+                        class="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+                        :disabled="busy"
+                        @click="render"
+                    >
+                        {{ busy ? 'Rendering…' : 'Render' }}
+                    </button>
+                </div>
+            </div>
+            <div v-if="pickerOpen" class="rounded-md border border-border bg-background p-3 space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex gap-1">
+                        <button
+                            type="button"
+                            :class="[
+                                'px-3 py-1 text-xs rounded-md transition-colors',
+                                pickerTab === 'plugin'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-muted text-muted-foreground hover:text-foreground',
+                            ]"
+                            @click="pickerTab = 'plugin'"
+                        >Plugin images ({{ pluginImages.length }})</button>
+                        <button
+                            type="button"
+                            :class="[
+                                'px-3 py-1 text-xs rounded-md transition-colors',
+                                pickerTab === 'media'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-muted text-muted-foreground hover:text-foreground',
+                            ]"
+                            @click="pickerTab = 'media'"
+                        >Media archive ({{ mediaImages.length }})</button>
+                    </div>
+                    <button
+                        type="button"
+                        class="text-xs text-muted-foreground hover:text-foreground"
+                        @click="closePicker"
+                    >Close</button>
+                </div>
+                <div v-if="pickerLoading" class="text-xs text-muted-foreground py-3 text-center">Loading…</div>
+                <div v-else-if="pickerTab === 'plugin' && pluginImages.length === 0" class="text-xs text-muted-foreground py-3 text-center">
+                    No plugin images. Upload some via the Images tab first.
+                </div>
+                <div v-else-if="pickerTab === 'media' && mediaImages.length === 0" class="text-xs text-muted-foreground py-3 text-center">
+                    No media-archive images visible to the current principal.
+                </div>
+                <div v-else class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
+                    <button
+                        v-for="img in (pickerTab === 'plugin' ? pluginImages : mediaImages)"
+                        :key="(img as ImageResource).name ?? (img as MediaArchiveImage).id"
+                        type="button"
+                        class="border border-border rounded-md overflow-hidden bg-card hover:border-primary transition-colors text-left"
+                        @click="pickerTab === 'plugin'
+                            ? pickPluginImage(img as ImageResource)
+                            : pickMediaImage(img as MediaArchiveImage)"
+                    >
+                        <div class="aspect-square bg-muted flex items-center justify-center">
+                            <img
+                                :src="pickerTab === 'plugin' ? (img as ImageResource).url : (img as MediaArchiveImage).asset_url"
+                                :alt="(img as ImageResource).name ?? (img as MediaArchiveImage).filename"
+                                class="max-w-full max-h-full object-contain"
+                                loading="lazy"
+                            />
+                        </div>
+                        <div class="p-1.5 text-[10px] font-mono truncate" :title="(img as ImageResource).name ?? (img as MediaArchiveImage).filename">
+                            {{ (img as ImageResource).name ?? (img as MediaArchiveImage).filename }}
+                        </div>
+                    </button>
+                </div>
             </div>
         </div>
 

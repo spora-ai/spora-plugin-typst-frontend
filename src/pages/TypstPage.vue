@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * TypstPage — single-page admin UI with four tabs:
+ * TypstPage — single-page admin UI with five tabs:
  *   - Fonts      (uploader + list of per-principal fonts)
  *   - Templates  (uploader + list of per-principal typ templates)
+ *   - Examples   (uploader + list of per-principal typ example patterns)
  *   - Images     (uploader + grid of per-principal images)
  *   - Playground (typ source editor + format selector + result panel)
  *
@@ -21,15 +22,25 @@ import FontUploader from '../components/FontUploader.vue'
 import FontList from '../components/FontList.vue'
 import TemplateUploader from '../components/TemplateUploader.vue'
 import TemplateList from '../components/TemplateList.vue'
+import ExampleUploader from '../components/ExampleUploader.vue'
+import ExampleList from '../components/ExampleList.vue'
 import ImageUploader from '../components/ImageUploader.vue'
 import ImageList from '../components/ImageList.vue'
 import CompileForm from '../components/CompileForm.vue'
 import AlertBanner from '../components/AlertBanner.vue'
 import PrincipalChipRow from '../components/PrincipalChipRow.vue'
 
-type Tab = 'fonts' | 'templates' | 'images' | 'playground'
+type Tab = 'fonts' | 'templates' | 'examples' | 'images' | 'playground'
 
-const TABS: readonly Tab[] = ['fonts', 'templates', 'images', 'playground']
+const TABS: readonly Tab[] = ['fonts', 'templates', 'examples', 'images', 'playground']
+
+const TAB_LABELS: Record<Tab, string> = {
+    fonts: 'Fonts',
+    templates: 'Templates',
+    examples: 'Examples',
+    images: 'Images',
+    playground: 'Playground',
+}
 
 const props = defineProps<{
     hostContext: import('../shims').PluginHostContext
@@ -63,8 +74,7 @@ function dismissError(): void {
 
 onMounted(async () => {
     // Load principals first so the chip row can settle before the
-    // tab content's first fetch — fonts/templates/images fetch with
-    // `principalId` from the chip-row selection.
+    // tab content's first fetch.
     await principalsStore.loadPrincipals()
     await Promise.all([
         resourceStore.loadAll(),
@@ -77,7 +87,7 @@ onMounted(async () => {
     <div class="mx-auto max-w-6xl p-6 space-y-5">
         <header class="flex items-baseline justify-between gap-3">
             <h1 class="text-xl font-semibold text-foreground">Typst</h1>
-            <span class="text-xs text-muted-foreground">Per-principal font / template / image library</span>
+            <span class="text-xs text-muted-foreground">Per-principal font / template / example / image library</span>
         </header>
 
         <AlertBanner
@@ -106,7 +116,7 @@ onMounted(async () => {
                         ]"
                         :aria-current="activeTab === tab ? 'page' : undefined"
                         @click="activeTab = tab"
-                    >{{ tab.charAt(0).toUpperCase() + tab.slice(1) }}</button>
+                    >{{ TAB_LABELS[tab] }}</button>
                 </li>
             </ul>
         </nav>
@@ -119,6 +129,11 @@ onMounted(async () => {
         <section v-else-if="activeTab === 'templates'" class="space-y-4">
             <TemplateUploader />
             <TemplateList />
+        </section>
+
+        <section v-else-if="activeTab === 'examples'" class="space-y-4">
+            <ExampleUploader />
+            <ExampleList />
         </section>
 
         <section v-else-if="activeTab === 'images'" class="space-y-4">

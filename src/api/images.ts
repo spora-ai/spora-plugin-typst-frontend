@@ -1,13 +1,19 @@
 /**
  * Image library API client.
  *
- * Wire shape matches `TypstImageController` in the backend:
+ * Wire shape matches `TypstImageController` (filesystem-backed, no
+ * `media_assets` rows). The basenameless shape mirrors the other
+ * resource kinds (font / template / example): one canonical
+ * filesystem row per basename, served via the plugin's own route.
+ *
  *   GET    /typst/images[?principal_id=N]  → { data: { images: ImageResource[] } }
  *   POST   /typst/images                    body { filename, mime, content } → 201 + { data: { image: {...} } }
- *   DELETE /typst/images/{id}               → 204
+ *   GET    /typst/images/{name}             → raw bytes (Content-Type from the file's extension)
+ *   DELETE /typst/images/{name}             → 204
  *
  * `content` is the raw bytes when the file is SVG / UTF-8 (text MIME)
- * and base64-encoded for binary uploads. The controller auto-detects.
+ * and base64-encoded for binary uploads. The controller auto-detects
+ * via the same heuristic as the earlier TypstFontController.
  *
  * `listImages` accepts an optional `principalId` for the chip-row
  * selector (must be in the caller's visible principals).
@@ -30,9 +36,9 @@ export async function uploadImage(filename: string, mime: string, content: strin
     return result.image
 }
 
-export async function deleteImage(id: string): Promise<void> {
+export async function deleteImage(name: string): Promise<void> {
     const api = getApi()
-    await api.delete(`/typst/images/${encodeURIComponent(id)}`)
+    await api.delete(`/typst/images/${encodeURIComponent(name)}`)
 }
 
 /**

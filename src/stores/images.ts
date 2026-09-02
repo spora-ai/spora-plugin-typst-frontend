@@ -2,9 +2,11 @@
 /**
  * Pinia store for the per-principal image library.
  *
- * Distinct from `stores/resources.ts` because images surface
- * different fields (id, asset_url, mime_type) and a different delete
- * path (`DELETE /typst/images/{id}` rather than `{name}`).
+ * The plugin's images are now filesystem-backed (no `media_assets`
+ * rows); the wire surface is `{ name, mime, size, modified_at, url }`
+ * and the URL is `/api/v1/typst/images/{name}`. Delete is by name,
+ * not by id. The store is otherwise identical in shape to the
+ * pre-refactor `media_assets` version.
  */
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
@@ -40,9 +42,6 @@ export const useImagesStore = defineStore('typst-images', () => {
         error.value = null
         try {
             const image = await imagesApi.uploadImage(filename, mime, content)
-            // Refresh the list — the canonical sort order is by
-            // `created_at DESC`, so a fresh prepend would be wrong;
-            // re-fetch is the simplest correct path.
             await loadImages()
             return image
         } catch (e) {
@@ -53,12 +52,12 @@ export const useImagesStore = defineStore('typst-images', () => {
         }
     }
 
-    async function removeImage(id: string): Promise<void> {
+    async function removeImage(name: string): Promise<void> {
         uploading.value = true
         error.value = null
         try {
-            await imagesApi.deleteImage(id)
-            images.value = images.value.filter((i) => i.id !== id)
+            await imagesApi.deleteImage(name)
+            images.value = images.value.filter((i) => i.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete image.'
             throw e
