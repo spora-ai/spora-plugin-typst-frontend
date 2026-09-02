@@ -26,3 +26,107 @@ body,
     color: #1f2937;
     background: #f9fafb;
 }
+
+/**
+ * Typst source highlighting — emitted by `highlightTypst()` in
+ * `src/typst-highlight.ts`. hljs wraps the result in
+ * `<span class="hljs">…</span>` and tints every recognised token
+ * with a `.typst-<class>` span; we map those classes to the
+ * plugin's muted palette so the highlighted source blends into
+ * the card chrome instead of fighting it. The two largest
+ * surfaces that use this are the Templates and Examples card
+ * previews, and the playground editor's textarea overlay.
+ *
+ * Light/dark follows the host's `.dark` class convention
+ * (`<html class="dark">` toggles via the host's theme switcher).
+ */
+.hljs {
+    background: transparent;
+    color: #1f2937;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.hljs-comment { color: #6b7280; font-style: italic; }
+.hljs-string { color: #047857; }
+.hljs-number { color: #b45309; }
+.hljs-literal { color: #b45309; }
+.hljs-keyword { color: #6d28d9; font-weight: 500; }
+.hljs-built_in { color: #1d4ed8; }
+.hljs-type,
+.hljs-class { color: #1d4ed8; }
+.hljs-function { color: #1d4ed8; }
+.hljs-title { color: #0f766e; }
+.hljs-variable { color: #b91c1c; }
+.hljs-meta { color: #6d28d9; }
+.hljs-emphasis { font-style: italic; color: #1f2937; }
+.hljs-bullet { color: #6b7280; }
+.hljs-punctuation { color: #4b5563; }
+
+.dark .hljs { color: #e5e7eb; }
+.dark .hljs-comment { color: #9ca3af; }
+.dark .hljs-string { color: #6ee7b7; }
+.dark .hljs-number { color: #fbbf24; }
+.dark .hljs-literal { color: #fbbf24; }
+.dark .hljs-keyword { color: #c4b5fd; }
+.dark .hljs-built_in { color: #93c5fd; }
+.dark .hljs-type,
+.dark .hljs-class { color: #93c5fd; }
+.dark .hljs-function { color: #93c5fd; }
+.dark .hljs-title { color: #5eead4; }
+.dark .hljs-variable { color: #fca5a5; }
+.dark .hljs-meta { color: #c4b5fd; }
+.dark .hljs-emphasis { color: #e5e7eb; }
+.dark .hljs-bullet { color: #9ca3af; }
+.dark .hljs-punctuation { color: #d1d5db; }
+
+/**
+ * Editor overlay: the playground's Typst source editor is a
+ * transparent `<textarea>` on top of a highlighted `<pre>`.
+ * Both share font / padding / line-height so the highlighted
+ * glyphs line up under the caret. The textarea's selection is
+ * painted with a translucent primary tint (the caret is
+ * `caret-color`-driven, set inline). The pre is `pointer-events:
+ * none` so all clicks fall through to the textarea.
+ */
+.typst-editor {
+    position: relative;
+}
+.typst-editor__highlight {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0.75rem;
+    overflow: auto;
+    pointer-events: none;
+    white-space: pre;
+    word-wrap: normal;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: #1f2937;
+}
+.typst-editor__textarea {
+    position: relative;
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0.75rem;
+    background: transparent;
+    color: transparent;
+    caret-color: #1f2937;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    border: 0;
+    outline: none;
+    resize: vertical;
+    white-space: pre;
+    word-wrap: normal;
+    overflow-wrap: normal;
+    tab-size: 2;
+}
+.typst-editor__textarea::selection {
+    background: rgba(124, 58, 237, 0.25);
+}
+.dark .typst-editor__highlight { color: #e5e7eb; }
+.dark .typst-editor__textarea { caret-color: #e5e7eb; }
+.dark .typst-editor__textarea::selection { background: rgba(167, 139, 250, 0.3); }
