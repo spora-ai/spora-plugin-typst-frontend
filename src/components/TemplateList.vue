@@ -6,13 +6,24 @@
  * `<details>` block reveals the source on click. Skill-shipped
  * templates (`origin: 'skill'`) render with the lock badge and a
  * disabled delete button — the API would 422 them anyway.
+ *
+ * Source-preview handling: when the user expands a card for the
+ * first time, we fetch the bytes via {@see getTemplate} and cache
+ * them in `sourceByName` so subsequent toggles don't re-fetch.
+ * The previous shape called an `async` function inline as the
+ * `<pre>`'s text content, which Vue stringifies to `[object Promise]`
+ * because the function returns a Promise before the body resolves.
  */
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
+import { ApiError } from '../api/client'
+import { getTemplate } from '../api/templates'
 import { useResourceStore } from '../stores/resources'
-import type { TemplateResource } from '../types'
 
 const store = useResourceStore()
 const openId = ref<string | null>(null)
+const sourceByName = ref<Record<string, string>>({})
+const loadingName = ref<string | null>(null)
+const loadError = ref<string | null>(null)
 
 function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`
@@ -24,25 +35,16 @@ function togglePreview(name: string): void {
     openId.value = openId.value === name ? null : name
 }
 
-function readTemplate(name: string): Promise<string> {
-    return import('../api/client').then(async ({ getApi }) => {
-        const api = getApi() as unknown as { hostFetch?: typeof fetch }
-        const hostFetch = api.hostFetch ?? globalThis.fetch
-        const res = await hostFetch(`/api/v1/typst/examples/${encodeURIComponent(name)}`, {
-            headers: { Accept: 'text/plain' },
-            credentials: 'include',
-        })
-        if (!res.ok) throw new Error(`Read template ${name} failed: ${res.status}`)
-        return res.text()
-    })
-}
-
-async function ensurePreview(template: TemplateResource): Promise<string> {
-    if (!openId.value) return ''
+async function ensureSource(name: string): Promise<void> {
+    if (sourceByName.value[name] !== undefined) return
+    loadingName.value = name
+    loadError.value = null
     try {
-        return await readTemplate(template.name)
+        sourceByName.value = { ...sourceByName.value, [name]: await getTemplate(name) }
     } catch (e) {
-        return `(failed to read: ${e instanceof Error ? e.message : 'unknown'})`
+        loadError.value = e instanceof ApiError ? e.message : 'failed to read template'
+    } finally {
+        loadingName.value = null
     }
 }
 
@@ -50,14 +52,26 @@ async function confirmAndDelete(name: string): Promise<void> {
     if (!confirm(`Delete template "${name}"? This cannot be undone.`)) return
     try {
         await store.removeTemplate(name)
+        // Drop the cached source so a re-upload of the same name
+        // re-fetches instead of showing the deleted file's body.
+        const next = { ...sourceByName.value }
+        delete next[name]
+        sourceByName.value = next
+        if (openId.value === name) openId.value = null
     } catch {
         // store.error already populated
     }
 }
 
-    onMounted(() => {
-        if ((store.templates ?? []).length === 0) store.loadTemplates()
-    })
+watch(openId, async (name) => {
+    if (name !== null) {
+        await ensureSource(name)
+    }
+})
+
+onMounted(() => {
+    if ((store.templates ?? []).length === 0) store.loadTemplates()
+})
 </script>
 
 <template>
@@ -98,7 +112,20 @@ async function confirmAndDelete(name: string): Promise<void> {
                 @toggle="togglePreview(template.name)"
             >
                 <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
-                <pre v-if="openId === template.name" class="mt-2 p-2 bg-muted rounded text-[11px] overflow-x-auto font-mono whitespace-pre">{{ ensurePreview(template) }}</pre>
+                <div v-if="openId === template.name" class="mt-2">
+                    <div
+                        v-if="loadingName === template.name"
+                        class="p-2 text-muted-foreground"
+                    >Loading…</div>
+                    <div
+                        v-else-if="loadError !== null"
+                        class="p-2 text-destructive"
+                    >{{ loadError }}</div>
+                    <pre
+                        v-else-if="sourceByName[template.name] !== undefined"
+                        class="p-2 bg-muted rounded text-[11px] overflow-x-auto font-mono whitespace-pre"
+                    >{{ sourceByName[template.name] }}</pre>
+                </div>
             </details>
         </div>
     </div>

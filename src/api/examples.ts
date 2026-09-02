@@ -34,3 +34,14 @@ export async function deleteExample(name: string): Promise<void> {
     const api = getApi()
     await api.delete(`/typst/examples/${encodeURIComponent(name)}`)
 }
+
+/**
+ * Read an example's source bytes. The controller responds with
+ * `Content-Type: text/plain; charset=utf-8` so the typed `get<string>`
+ * returns the file body directly. Used by the "View source" preview
+ * in the Examples card list.
+ */
+export async function getExample(name: string): Promise<string> {
+    const api = getApi()
+    return await api.get<string>(`/typst/examples/${encodeURIComponent(name)}`)
+}

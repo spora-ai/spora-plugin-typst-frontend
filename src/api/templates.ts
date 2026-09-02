@@ -3,6 +3,7 @@
  *
  * Wire shape matches `TypstTemplateController`:
  *   GET    /typst/templates[?principal_id=N]  → { data: { templates: TemplateResource[] } }
+ *   GET    /typst/templates/{name}            → text/plain body (the .typ source)
  *   POST   /typst/templates                    body { name, content } → 201 + { data: { template: {...} } }
  *   DELETE /typst/templates/{name}             → 204
  *
@@ -22,6 +23,17 @@ export async function listTemplates(principalId?: number): Promise<TemplateResou
         : '/typst/templates'
     const result = await api.get<{ templates: TemplateResource[] }>(path)
     return result.templates
+}
+
+/**
+ * Read a template's source bytes. The controller responds with
+ * `Content-Type: text/plain; charset=utf-8` so the typed `get<string>`
+ * returns the file body directly. Used by the "View source" preview
+ * in the Templates card list.
+ */
+export async function getTemplate(name: string): Promise<string> {
+    const api = getApi()
+    return await api.get<string>(`/typst/templates/${encodeURIComponent(name)}`)
 }
 
 export async function uploadTemplate(name: string, content: string): Promise<TemplateResource> {
