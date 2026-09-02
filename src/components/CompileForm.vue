@@ -155,7 +155,7 @@ function isPngOutput(r: CompileResult | null): boolean {
                 class="w-full font-mono text-xs leading-snug p-3 rounded-md border border-input bg-background text-foreground focus:border-ring focus:ring-1 focus:ring-ring outline-none"
                 spellcheck="false"
                 autocomplete="off"
-            />
+            ></textarea>
             <div class="flex items-center justify-between gap-3 flex-wrap">
                 <fieldset class="flex items-center gap-3 text-sm">
                     <legend class="sr-only">Format</legend>

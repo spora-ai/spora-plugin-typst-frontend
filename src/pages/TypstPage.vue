@@ -29,6 +29,8 @@ import PrincipalChipRow from '../components/PrincipalChipRow.vue'
 
 type Tab = 'fonts' | 'templates' | 'images' | 'playground'
 
+const TABS: readonly Tab[] = ['fonts', 'templates', 'images', 'playground']
+
 const props = defineProps<{
     hostContext: import('../shims').PluginHostContext
 }>()
@@ -93,7 +95,7 @@ onMounted(async () => {
 
         <nav class="border-b border-border">
             <ul class="flex gap-1">
-                <li v-for="tab in (['fonts', 'templates', 'images', 'playground'] as Tab[])" :key="tab">
+                <li v-for="tab in TABS" :key="tab">
                     <button
                         type="button"
                         :class="[
