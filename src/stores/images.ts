@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * Pinia store for the per-principal image library.
  *
@@ -5,7 +6,7 @@
  * different fields (id, asset_url, mime_type) and a different delete
  * path (`DELETE /typst/images/{id}` rather than `{name}`).
  */
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import * as imagesApi from '../api/images'
@@ -90,3 +91,7 @@ export const useImagesStore = defineStore('typst-images', () => {
         clearError,
     }
 })
+
+if (import.meta.hot) {
+    import.meta.hot.accept(acceptHMRUpdate(useImagesStore, import.meta.hot))
+}

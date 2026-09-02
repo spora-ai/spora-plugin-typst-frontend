@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * Pinia store for fonts + templates (tier-1 + tier-2 resources).
  *
@@ -6,8 +7,14 @@
  * avoid duplicating the loading-flag pattern across two stores. The
  * stores for images (which surface a different wire shape with id +
  * asset_url) live in `stores/images.ts`.
+ *
+ * `acceptHMRUpdate` is wired at the bottom so a store rename (e.g.
+ * `examples` → `templates`) triggers a full module reload instead of
+ * silently keeping the old state — otherwise long-running dev sessions
+ * see `store.templates` resolve to `undefined` because the cached
+ * store instance was created with the previous shape.
  */
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import * as fontsApi from '../api/fonts'
@@ -146,3 +153,12 @@ export const useResourceStore = defineStore('typst-resources', () => {
         clearError,
     }
 })
+
+// Make the store HMR-aware. Without this, renaming `templates` →
+// `something` keeps the old instance in memory and any in-flight
+// component reading the new name hits `undefined`. With it, Vite
+// disposes the old store on edit and the next `useResourceStore()`
+// call recreates it from scratch.
+if (import.meta.hot) {
+    import.meta.hot.accept(acceptHMRUpdate(useResourceStore, import.meta.hot))
+}

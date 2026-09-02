@@ -31,7 +31,7 @@ async function confirmAndDelete(name: string): Promise<void> {
 }
 
 onMounted(() => {
-    if (store.fonts.length === 0) store.loadFonts()
+    if ((store.fonts ?? []).length === 0) store.loadFonts()
 })
 </script>
 

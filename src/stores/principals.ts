@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * Pinia store for the principal selector.
  *
@@ -6,7 +7,7 @@
  * Selected principal id is also kept here so it survives tab
  * navigation without prop-drilling.
  */
-import { defineStore } from 'pinia'
+import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { ApiError } from '../api/client'
 import * as principalsApi from '../api/principals'
@@ -56,3 +57,7 @@ export const usePrincipalsStore = defineStore('typst-principals', () => {
         clearError,
     }
 })
+
+if (import.meta.hot) {
+    import.meta.hot.accept(acceptHMRUpdate(usePrincipalsStore, import.meta.hot))
+}

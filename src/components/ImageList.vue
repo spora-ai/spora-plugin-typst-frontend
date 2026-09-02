@@ -50,18 +50,18 @@ async function confirmAndDelete(id: string, filename: string): Promise<void> {
 }
 
 onMounted(() => {
-    if (store.images.length === 0) store.loadImages()
+    if ((store.images ?? []).length === 0) store.loadImages()
 })
 </script>
 
 <template>
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         <div
-            v-if="store.loading && store.images.length === 0"
+            v-if="store.loading && (store.images ?? []).length === 0"
             class="col-span-full text-center text-muted-foreground py-6"
         >Loading…</div>
         <div
-            v-else-if="store.images.length === 0"
+            v-else-if="(store.images ?? []).length === 0"
             class="col-span-full text-center text-muted-foreground py-6"
         >No images uploaded yet. Drop a PNG / JPEG / WebP / SVG file above.</div>
         <div

@@ -55,23 +55,23 @@ async function confirmAndDelete(name: string): Promise<void> {
     }
 }
 
-onMounted(() => {
-    if (store.templates.length === 0) store.loadTemplates()
-})
+    onMounted(() => {
+        if ((store.templates ?? []).length === 0) store.loadTemplates()
+    })
 </script>
 
 <template>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div
-            v-if="store.loading && store.templates.length === 0"
+            v-if="store.loading && (store.templates ?? []).length === 0"
             class="md:col-span-2 text-center text-muted-foreground py-6"
         >Loading…</div>
         <div
-            v-else-if="store.templates.length === 0"
+            v-else-if="(store.templates ?? []).length === 0"
             class="md:col-span-2 text-center text-muted-foreground py-6"
         >No templates uploaded yet.</div>
         <div
-            v-for="template in store.templates"
+            v-for="template in (store.templates ?? [])"
             :key="template.name"
             class="rounded-lg border border-border bg-card p-4 space-y-2"
         >
