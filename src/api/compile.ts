@@ -3,21 +3,23 @@
  *
  * Wire shape matches `TypstCompileController` in the backend:
  *   POST /typst/compile
- *     body { source, format?, page?, dpi? }
+ *     body { source, name?, format?, page?, dpi? }
  *     → 200 + { data: CompileResult }
  *     → 422 { error: { code, message, diagnostics? } }
  *     → 401 / 503 on auth / producer-missing.
  *
- * The controller and endpoint are now shipped (this client is the
- * SPA's bridge into it). Earlier versions of `CompileForm.vue`
- * attempted endpoint detection — that dance is gone, this module is
- * the single source of truth for the request shape.
+ * `name` is the user-chosen filename. The controller upserts the
+ * parent row by `(principal_id, tool_name='typst.playground', filename)`,
+ * so a second compile of the same name overwrites the parent in
+ * place rather than stacking a fresh row in the media archive. The
+ * returned `source_id` is stable for the lifetime of the file.
  */
 import { getApi } from './client'
 import type { CompileResult } from '../types'
 
 export async function compileTypst(opts: {
     source: string
+    name?: string
     format?: 'pdf' | 'png' | 'svg'
     page?: number
     dpi?: number
@@ -25,6 +27,7 @@ export async function compileTypst(opts: {
     const api = getApi()
     const result = await api.post<CompileResult>('/typst/compile', {
         source: opts.source,
+        name: opts.name,
         format: opts.format ?? 'pdf',
         page: opts.page,
         dpi: opts.dpi,

@@ -61,16 +61,55 @@ export type ResourceKind = 'font' | 'template' | 'example' | 'image'
  * response envelope — the playground calls `POST /api/v1/typst/compile`
  * and gets a media-derivative row back, with the canonical
  * `/api/v1/assets/<uuid>.<ext>` URL the chat UI knows how to embed.
+ *
+ * `source_id` / `source_name` are the parent row's id + filename
+ * so the editor can keep the open file's identity across compiles
+ * (a second compile of the same name overwrites the parent in
+ * place, so `source_id` stays stable for the lifetime of the
+ * session).
  */
 export interface CompileResult {
     derivative_id: string
     asset_url: string
+    source_id: string
+    source_name: string
     format: 'pdf' | 'png' | 'svg'
     mime: string
     size: number
     width: number | null
     height: number | null
     preview_url: string | null
+}
+
+/**
+ * A single playground source row in the media archive. The list
+ * endpoint returns these so the open picker can show "what files
+ * already exist", and the show endpoint returns the full content
+ * when the operator picks one.
+ */
+export interface PlaygroundSource {
+    id: string
+    filename: string
+    byte_size: number
+    mime: string
+    content: string
+    created_at: string | null
+    updated_at: string | null
+}
+
+/**
+ * Slim listing entry for the playground source picker. Excludes
+ * `content` (the body) so the picker can render hundreds of files
+ * without dragging every .typ source down the wire. The full body
+ * is fetched on demand via the show endpoint when the operator
+ * picks one.
+ */
+export interface PlaygroundSourceSummary {
+    id: string
+    filename: string
+    byte_size: number
+    created_at: string | null
+    updated_at: string | null
 }
 
 /**
