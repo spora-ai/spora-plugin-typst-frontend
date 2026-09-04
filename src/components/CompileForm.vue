@@ -44,7 +44,7 @@ import { listImages } from '../api/images'
 import { listMediaArchiveImages } from '../api/media-archive'
 import { highlightTypst } from 'highlightjs-typst/highlight'
 import { usePrincipalsStore } from '../stores/principals'
-import { useSourcesStore } from '../stores/sources'
+import { useSourcesStore, type SourcesKindFilter } from '../stores/sources'
 import type { CompileResult, ImageResource, MediaArchiveImage, PlaygroundSourceSummary } from '../types'
 import OpenPickerModal from './OpenPickerModal.vue'
 
@@ -198,6 +198,10 @@ async function openPicker(): Promise<void> {
 
 function closeOpenPicker(): void {
     openPickerOpen.value = false
+}
+
+function onChangePickerKind(kind: SourcesKindFilter): void {
+    sourcesStore.setKind(kind)
 }
 
 async function pickExistingSource(summary: PlaygroundSourceSummary): Promise<void> {
@@ -652,8 +656,11 @@ onMounted(() => {
             :open="openPickerOpen"
             :sources="sourcesStore.sources"
             :loading="sourcesStore.loading"
+            :kind="sourcesStore.kind"
+            :kind-counts="sourcesStore.kindCounts"
             @close="closeOpenPicker"
             @pick="pickExistingSource"
+            @change-kind="onChangePickerKind"
         />
 
         <div

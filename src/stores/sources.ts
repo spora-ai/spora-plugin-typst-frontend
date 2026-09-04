@@ -19,7 +19,13 @@ import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import * as sourcesApi from '../api/sources'
-import type { PlaygroundSource, PlaygroundSourceSummary } from '../types'
+import type {
+    PlaygroundSource,
+    PlaygroundSourceKind,
+    PlaygroundSourceSummary,
+} from '../types'
+
+export type SourcesKindFilter = PlaygroundSourceKind | 'all'
 
 export const useSourcesStore = defineStore('typst-sources', () => {
     const sources = ref<PlaygroundSourceSummary[]>([])
@@ -31,21 +37,66 @@ export const useSourcesStore = defineStore('typst-sources', () => {
     // into it. Mirrors the same shape as the resource and image
     // stores so the chip row's wiring is symmetric.
     const principalId = ref<number | null>(null)
+    // The kind chip the picker is currently scoped to. The store
+    // exposes the active kind plus the per-kind counts so the chip
+    // row renders count badges without re-deriving on every click.
+    // `all` (the default) is the union of the three pools.
+    const kind = ref<SourcesKindFilter>('all')
+    // Per-kind counts derived from the most recent unfiltered fetch.
+    // Cached so chip switches don't trigger a per-kind network round
+    // trip — the modal renders the badges from this snapshot and
+    // filters the list client-side.
+    const kindCounts = ref<Record<PlaygroundSourceKind, number>>({
+        saved: 0,
+        generated: 0,
+        uploaded: 0,
+        other: 0,
+    })
 
     function setPrincipalId(id: number | null): void {
         principalId.value = id
+    }
+
+    function setKind(next: SourcesKindFilter): void {
+        kind.value = next
     }
 
     async function loadSources(): Promise<void> {
         loading.value = true
         error.value = null
         try {
-            sources.value = await sourcesApi.listSources(principalId.value)
+            // Always fetch the union so the per-kind count badges
+            // stay accurate even when the chip is narrowed. The
+            // client-side filter then drops the rows that don't
+            // match the active kind — cheaper than per-chip network
+            // round trips and lets the chip switch stay instant.
+            const fetched = await sourcesApi.listSources(principalId.value, 'all')
+            sources.value = fetched
+            recomputeKindCounts(fetched)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load playground sources.'
         } finally {
             loading.value = false
         }
+    }
+
+    /**
+     * Walk the union fetch and tally each row by its backend-derived
+     * `kind` so the chip row can show "Saved (3) · Generated (1) ·
+     * Uploaded (0)" without re-deriving on every render. Kept as a
+     * pure function so a future test can exercise it directly.
+     */
+    function recomputeKindCounts(rows: PlaygroundSourceSummary[]): void {
+        const next: Record<PlaygroundSourceKind, number> = {
+            saved: 0,
+            generated: 0,
+            uploaded: 0,
+            other: 0,
+        }
+        for (const row of rows) {
+            next[row.kind] += 1
+        }
+        kindCounts.value = next
     }
 
     async function openSource(id: string): Promise<PlaygroundSource | null> {
@@ -65,7 +116,8 @@ export const useSourcesStore = defineStore('typst-sources', () => {
      * null on failure (the error message is set on `error.value`).
      *
      * The new row is prepended to `sources.value` so the open picker
-     * reflects the freshly created file without a full reload.
+     * reflects the freshly created file without a full reload, and
+     * the per-kind count for its pool is incremented.
      */
     async function createSource(
         filename: string,
@@ -80,6 +132,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
             // would also surface it on the next reload, but the
             // in-memory list wouldn't reflect it without this.
             sources.value = [created, ...sources.value.filter((s) => s.id !== created.id)]
+            recomputeKindCounts(sources.value)
             return created
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to save playground source.'
@@ -105,6 +158,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
                         id: existing.id,
                         filename: existing.filename,
                         byte_size: saved.byte_size,
+                        kind: existing.kind,
                         created_at: existing.created_at,
                         updated_at: saved.updated_at,
                     }
@@ -117,11 +171,13 @@ export const useSourcesStore = defineStore('typst-sources', () => {
                         id: saved.id,
                         filename: saved.filename,
                         byte_size: saved.byte_size,
+                        kind: saved.kind,
                         created_at: saved.created_at,
                         updated_at: saved.updated_at,
                     },
                     ...sources.value,
                 ]
+                recomputeKindCounts(sources.value)
             }
             return saved
         } catch (e) {
@@ -138,6 +194,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
         try {
             await sourcesApi.deleteSource(id, principalId.value)
             sources.value = sources.value.filter((s) => s.id !== id)
+            recomputeKindCounts(sources.value)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete playground source.'
             throw e
@@ -166,7 +223,10 @@ export const useSourcesStore = defineStore('typst-sources', () => {
         saving,
         error,
         principalId,
+        kind,
+        kindCounts,
         setPrincipalId,
+        setKind,
         loadSources,
         openSource,
         createSource,

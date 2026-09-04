@@ -1,14 +1,20 @@
 <script setup lang="ts">
 /**
- * File picker modal — search + filter for the playground's source pool.
+ * File picker modal — search + kind chip + filter for the playground's
+ * source pool.
  *
  * Replaces the inline dropdown that ships with the basic Open button.
  * The dropdown works for ~10 files; this modal scales to hundreds
- * because it has a search input, a sort control, and a virtualized
- * list (`<List>` from `vue-virtual-scroller` — but to keep the
- * dep footprint small, we do plain CSS overflow with a max-height
- * instead; hundreds of rows scroll fine without virtualization
- * because each row is ~28px tall).
+ * because it has a search input, a sort control, a kind chip row,
+ * and a virtualized list (`<List>` from `vue-virtual-scroller` —
+ * but to keep the dep footprint small, we do plain CSS overflow with
+ * a max-height instead; hundreds of rows scroll fine without
+ * virtualization because each row is ~28px tall).
+ *
+ * The chip row scopes the listing to one of the three `.typ` pools
+ * (saved / generated / uploaded) plus an "All" chip that returns
+ * the union. Per-kind counts come from the parent (the `sources`
+ * store caches them so chip switches don't refetch).
  *
  * Keyboard:
  *   - /       focuses the search input
@@ -17,22 +23,29 @@
  *   - Enter   opens the active row
  *
  * The modal is owned by `CompileForm.vue` (it sets `open` and
- * reacts to `pick`). The `principalId` is plumbed through the
- * `sources` store, which already scopes listings to the chip row's
- * selection.
+ * reacts to `pick`). The `principalId` + `kind` are plumbed
+ * through the `sources` store, which already scopes listings to
+ * the chip row's selection.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { PlaygroundSourceSummary } from '../types'
+import type { PlaygroundSourceKind, PlaygroundSourceSummary } from '../types'
+
+export type SourcesKindFilter = PlaygroundSourceKind | 'all'
 
 const props = defineProps<{
     open: boolean
     sources: PlaygroundSourceSummary[]
     loading: boolean
+    /** Active kind chip; `all` is the union. */
+    kind: SourcesKindFilter
+    /** Per-kind counts for the chip badges. */
+    kindCounts: Record<PlaygroundSourceKind, number>
 }>()
 
 const emit = defineEmits<{
     (e: 'close'): void
     (e: 'pick', source: PlaygroundSourceSummary): void
+    (e: 'change-kind', kind: SourcesKindFilter): void
 }>()
 
 const search = ref('')
@@ -45,9 +58,25 @@ const searchInputRef = ref<HTMLInputElement | null>(null)
 const listRef = ref<HTMLDivElement | null>(null)
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
+/**
+ * Static chip definitions. The label and aria-label are kept
+ * distinct because the chip text shows a count (e.g. "Saved (3)")
+ * while the aria-label spells the kind out for screen readers
+ * ("Saved playground files").
+ */
+const kindChips: { value: SourcesKindFilter; label: string; ariaLabel: string }[] = [
+    { value: 'all', label: 'All', ariaLabel: 'All playground files' },
+    { value: 'saved', label: 'Saved', ariaLabel: 'Saved playground files' },
+    { value: 'generated', label: 'Generated', ariaLabel: 'LLM-generated playground files' },
+    { value: 'uploaded', label: 'Uploaded', ariaLabel: 'Operator-uploaded playground files' },
+]
+
 const filtered = computed<PlaygroundSourceSummary[]>(() => {
     const q = search.value.trim().toLowerCase()
     let out = props.sources
+    if (props.kind !== 'all') {
+        out = out.filter((s) => s.kind === props.kind)
+    }
     if (q !== '') {
         out = out.filter((s) => s.filename.toLowerCase().includes(q))
     }
@@ -68,12 +97,38 @@ const activeRowId = computed<string | null>(() => {
     return row?.id ?? null
 })
 
+/**
+ * Empty-state copy that follows the active kind chip. The full
+ * copy lives here (not the page) because the chip is the
+ * picker's local state — the page doesn't know which pool the
+ * operator is currently scoping to.
+ */
+const emptyStateMessage = computed<string>(() => {
+    switch (props.kind) {
+        case 'saved':     return 'No saved playground files yet. Render once to create one.'
+        case 'generated': return 'No LLM-generated .typ files yet.'
+        case 'uploaded':  return 'No uploaded .typ files yet.'
+        case 'other':     return 'No .typ files in this pool.'
+        case 'all':
+        default:          return 'No .typ files owned by this principal yet.'
+    }
+})
+
 function close(): void {
     emit('close')
 }
 
 function pick(s: PlaygroundSourceSummary): void {
     emit('pick', s)
+}
+
+function selectKind(next: SourcesKindFilter): void {
+    if (next === props.kind) return
+    emit('change-kind', next)
+    // Reset the active row so keyboard navigation lands on the
+    // first row of the new pool (or empty if the pool is empty)
+    // rather than a stale index pointing past the new bounds.
+    activeIdx.value = 0
 }
 
 function moveActive(delta: number): void {
@@ -173,7 +228,27 @@ function formatUpdated(s: string | null): string {
     return d.toLocaleString()
 }
 
+/**
+ * Count badge content for a kind chip. `all` is the union of the
+ * three pools; the helper sums them on demand so the badge stays
+ * consistent even if the backend ever adds another pool without
+ * updating the chip row.
+ */
+function kindBadgeValue(value: SourcesKindFilter): number {
+    if (value === 'all') {
+        return props.kindCounts.saved + props.kindCounts.generated + props.kindCounts.uploaded
+    }
+    if (value === 'other') {
+        return props.kindCounts.other
+    }
+    return props.kindCounts[value]
+}
+
 watch(search, () => {
+    activeIdx.value = 0
+})
+
+watch(() => props.kind, () => {
     activeIdx.value = 0
 })
 
@@ -255,6 +330,38 @@ onBeforeUnmount(() => {
 
         <div
           v-if="sources.length > 0"
+          class="flex items-center gap-1.5 px-3 py-1.5 border-b border-border overflow-x-auto"
+          role="tablist"
+          aria-label="Filter playground files by pool"
+        >
+          <button
+            v-for="chip in kindChips"
+            :key="chip.value"
+            type="button"
+            role="tab"
+            :aria-selected="kind === chip.value"
+            :aria-label="chip.ariaLabel"
+            :data-testid="`open-picker-kind-${chip.value}`"
+            :class="[
+              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs whitespace-nowrap border transition-colors',
+              kind === chip.value
+                ? 'border-ring bg-primary text-primary-foreground'
+                : 'border-border bg-muted text-muted-foreground hover:text-foreground',
+            ]"
+            @click="selectKind(chip.value)"
+          >
+            <span>{{ chip.label }}</span>
+            <span
+              :class="[
+                'inline-flex items-center justify-center min-w-[1.25rem] px-1 rounded-full text-[10px] tabular-nums',
+                kind === chip.value ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-background text-muted-foreground',
+              ]"
+            >{{ kindBadgeValue(chip.value) }}</span>
+          </button>
+        </div>
+
+        <div
+          v-if="sources.length > 0"
           class="grid gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border select-none"
           style="grid-template-columns: 1fr 5rem 9rem;"
         >
@@ -293,21 +400,25 @@ onBeforeUnmount(() => {
           </div>
           <div
             v-else-if="sources.length === 0"
+            data-testid="open-picker-empty-all"
             class="px-3 py-6 text-center text-sm text-muted-foreground"
           >
-            No saved playground files yet. Render once to create one.
+            {{ emptyStateMessage }}
           </div>
           <div
             v-else-if="filtered.length === 0"
+            data-testid="open-picker-empty-filtered"
             class="px-3 py-6 text-center text-sm text-muted-foreground"
           >
-            No files match “{{ search }}”.
+            <template v-if="search !== ''">No files match “{{ search }}”.</template>
+            <template v-else>{{ emptyStateMessage }}</template>
           </div>
           <button
             v-for="(s, idx) in filtered"
             v-else
             :key="s.id"
             :data-source-id="s.id"
+            :data-source-kind="s.kind"
             type="button"
             :class="[
               'grid gap-3 items-center w-full px-3 py-1 text-sm text-left border-b border-border last:border-b-0',

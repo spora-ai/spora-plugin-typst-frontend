@@ -64,9 +64,8 @@ export type ResourceKind = 'font' | 'template' | 'example' | 'image'
  *
  * `source_id` / `source_name` are the parent row's id + filename
  * so the editor can keep the open file's identity across compiles
- * (a second compile of the same name overwrites the parent in
- * place, so `source_id` stays stable for the lifetime of the
- * session).
+ * (the parent row is keyed by id, not filename, so a second
+ * compile with the same `filename` produces a sibling row).
  */
 export interface CompileResult {
     derivative_id: string
@@ -82,6 +81,21 @@ export interface CompileResult {
 }
 
 /**
+ * Pool identifier for a `.typ` source row in the media archive.
+ *
+ * - `saved`      — `tool_name='typst.playground'` (operator-saved source)
+ * - `generated`  — `tool_name='typst.render'` (LLM-rendered parent)
+ * - `uploaded`   — `upload_source='upload'` (multipart `.typ` upload)
+ * - `other`      — any row that doesn't match the above (e.g. an
+ *                  image-library `.typ` row created by an older
+ *                  code path).
+ *
+ * The picker chip row scopes the listing to one pool at a time;
+ * `all` (the chip default) returns the union.
+ */
+export type PlaygroundSourceKind = 'saved' | 'generated' | 'uploaded' | 'other'
+
+/**
  * A single playground source row in the media archive. The list
  * endpoint returns these so the open picker can show "what files
  * already exist", and the show endpoint returns the full content
@@ -92,6 +106,7 @@ export interface PlaygroundSource {
     filename: string
     byte_size: number
     mime: string
+    kind: PlaygroundSourceKind
     content: string
     created_at: string | null
     updated_at: string | null
@@ -103,11 +118,16 @@ export interface PlaygroundSource {
  * without dragging every .typ source down the wire. The full body
  * is fetched on demand via the show endpoint when the operator
  * picks one.
+ *
+ * `kind` is the same {@see PlaygroundSourceKind} value the backend
+ * derives from `tool_name` + `upload_source` so the chip row can
+ * scope the listing client-side without re-querying the server.
  */
 export interface PlaygroundSourceSummary {
     id: string
     filename: string
     byte_size: number
+    kind: PlaygroundSourceKind
     created_at: string | null
     updated_at: string | null
 }
