@@ -138,9 +138,22 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@1b442ee39ac3fa7c2acdd410208dcb2bcfaae6c4 # v4.1.0
+        # v4.x is a composite action that calls `actions/cache@v4` without
+        # a SHA pin; that resolves to the now-deprecated cache v4.0.2 which
+        # GitHub Actions has started hard-failing (see run 34036318970 /
+        # job 101495022976). v4.2.2 has the same issue, and v5.x still emits
+        # the upstream "Vulnerability warning" annotation.
+        #
+        # v6.0.0 drops the cache step entirely and runs on node20, so the
+        # cache-v4.0.2 deprecation goes away. It also exposes `projectBaseDir`
+        # as a first-class input, which the action concatenates as
+        # `-Dsonar.projectBaseDir=...` — the only form the bundled scanner
+        # CLI 7.2.0 accepts (the legacy `--project-base-dir=...` flag we used
+        # with v4 is rejected with "Unrecognized option" — see run 34053421983
+        # / job 101541042208).
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
-          args: --project-base-dir=${{ github.workspace }}
+          projectBaseDir: ${{ github.workspace }}
