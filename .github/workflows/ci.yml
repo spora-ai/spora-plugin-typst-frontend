@@ -151,9 +151,17 @@ jobs:
         # CLI 7.2.0 accepts (the legacy `--project-base-dir=...` flag we used
         # with v4 is rejected with "Unrecognized option" — see run 34053421983
         # / job 101541042208).
+        #
+        # Note: do NOT forward `SONAR_HOST_URL` into the step env. The
+        # repo has no such secret, so the var expands to an empty string,
+        # and the scanner 7.2.0 bootstrapper treats the empty string as a
+        # malformed SonarQube-Server host URL ("Expected URL scheme
+        # 'http' or 'https' but no scheme was found" — see run 34053707941
+        # / job 101541770325) instead of falling back to the
+        # `sonar.organization=spora-ai` org-based auto-resolution. SonarCloud
+        # auth is handled by SONAR_TOKEN alone.
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           projectBaseDir: ${{ github.workspace }}
