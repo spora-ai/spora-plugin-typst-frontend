@@ -42,11 +42,14 @@ jobs:
         run: npm test
 
       - name: Coverage
-        # Runs the same suite with the v8 coverage provider enabled
-        # so the SonarCloud scan job below has an lcov.info + JUnit
-        # XML report to ingest. Excluded files (main.ts / dev-main /
-        # shims.d.ts / types.ts) are mirrored in sonar-project.properties
-        # so the coverage view matches what SonarCloud sees.
+        # Runs the suite with the v8 coverage provider enabled so the
+        # artifact is available for debugging. The SonarCloud job
+        # below re-runs the same suite (it has its own working tree)
+        # and ingests coverage/lcov.info from there — it does NOT
+        # pick up this job's coverage/ directory. Excluded files
+        # (main.ts / dev-main / shims.d.ts / types.ts / *.vue) are
+        # mirrored in sonar-project.properties so the coverage view
+        # matches what SonarCloud sees.
         env:
           CI: '1'
         run: npm run test:coverage
@@ -136,6 +139,29 @@ jobs:
 
       - name: Install
         run: npm ci --ignore-scripts
+
+      # Generate the coverage report the JS/TS scanner ingests. The
+      # `lint-and-test` job above runs the same suite but doesn't share
+      # its working tree, so we re-run it here.
+      - name: Run tests with coverage
+        env:
+          CI: '1'
+        run: npm run test:coverage
+
+      # Fail loud if the report is missing. The scanner would otherwise
+      # exit 0 with "No coverage information will be saved" and the
+      # dashboard would show "Coverage is not yet visible" — which is
+      # harder to debug than a step that names the missing file.
+      - name: Verify coverage report
+        run: |
+          set -euo pipefail
+          if [ ! -s coverage/lcov.info ]; then
+            echo "::error::coverage/lcov.info is missing or empty — the scanner would publish 0% coverage."
+            echo "::error::Check that 'npm run test:coverage' succeeded and emitted ./coverage/lcov.info."
+            exit 1
+          fi
+          echo "coverage/lcov.info size: $(wc -c < coverage/lcov.info) bytes"
+          echo "covered files: $(grep -c '^SF:' coverage/lcov.info)"
 
       - name: SonarCloud Scan
         # v4.x is a composite action that calls `actions/cache@v4` without
