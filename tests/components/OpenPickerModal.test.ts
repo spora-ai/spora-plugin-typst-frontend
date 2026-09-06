@@ -8,11 +8,14 @@
  * the chip row. Per-kind counts come from the parent so chip
  * switches don't refetch.
  *
- * Test setup note: the modal uses `<Teleport to="body">` to
- * escape overflow contexts, and `attachTo: document.body`
- * ensures the teleported subtree is reachable via querySelector.
+ * Test setup note: the modal is mounted inside the SFC's normal
+ * render tree (no Teleport), and `attachTo: document.body`
+ * ensures the rendered subtree is reachable via querySelector.
  * Test assertions reach into `document.body` rather than the
- * wrapper's HTML because the teleported fragment isn't in the
+ * wrapper's HTML because the rendered fragment is in the wrapper
+ * that's been appended to body, not in the test wrapper's element tree.
+ * Tests that check the Tailwind scoping (`#spora-plugin-typst`)
+ * rebuild the host's slot wrapper in beforeEach.
  * wrapper's element tree.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
@@ -271,6 +274,118 @@ describe('OpenPickerModal — empty state', () => {
         const filtered = document.body.querySelector('[data-testid="open-picker-empty-filtered"]')
         expect(filtered).not.toBeNull()
         expect(filtered?.textContent ?? '').toContain('No uploaded .typ files yet.')
+        wrapper.unmount()
+    })
+})
+
+describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
+    // The host SPA's `PluginAppPage` wraps the plugin mount in
+    // `<div id="spora-plugin-typst">`; every Tailwind utility is generated
+    // beneath that ID (`tailwind.config.ts → important: '#spora-plugin-typst'`).
+    // When the modal is teleported to `<body>`, the teleported subtree is
+    // outside the scoping ancestor and every utility class falls through —
+    // the modal reverts to the UA `<dialog>` default (small white box at
+    // the viewport centre, no backdrop sizing, no flex centering). These
+    // tests rebuild the host's slot wrapper in happy-dom so the regression
+    // can be caught without a real browser.
+    beforeEach(() => {
+        document.body.innerHTML = ''
+        const wrap = document.createElement('div')
+        wrap.id = 'spora-plugin-typst'
+        document.body.appendChild(wrap)
+    })
+
+    it('keeps the modal wrapper inside #spora-plugin-typst (not teleported)', () => {
+        const wrapper = mount(OpenPickerModal, {
+            props: {
+                open: true,
+                sources: [],
+                loading: false,
+                kind: 'all',
+                kindCounts: KIND_COUNTS_EMPTY,
+            },
+            attachTo: document.querySelector('#spora-plugin-typst')!,
+        })
+
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+        expect(dialog).not.toBeNull()
+        // If the dialog is teleported to <body>, `closest('#spora-plugin-typst')`
+        // walks past the host slot and returns null — the structural failure
+        // mode of the bug this branch fixes.
+        expect(dialog?.closest('#spora-plugin-typst')).not.toBeNull()
+        wrapper.unmount()
+    })
+
+    it('renders the modal as a div, not a native <dialog>', () => {
+        const wrapper = mount(OpenPickerModal, {
+            props: {
+                open: true,
+                sources: [],
+                loading: false,
+                kind: 'all',
+                kindCounts: KIND_COUNTS_EMPTY,
+            },
+            attachTo: document.querySelector('#spora-plugin-typst')!,
+        })
+
+        // `<dialog>` UA positioning (`position: absolute; margin: auto; padding: 1em;
+        // border: solid; background: white`) was what we fought with the
+        // scoped utilities; the div wrapper restores the plain CSS pattern
+        // the suite of positioning utilities expects.
+        expect(document.querySelector('dialog')).toBeNull()
+        wrapper.unmount()
+    })
+
+    it('renders a sibling backdrop div that closes the modal on click', async () => {
+        const wrapper = mount(OpenPickerModal, {
+            props: {
+                open: true,
+                sources: [],
+                loading: false,
+                kind: 'all',
+                kindCounts: KIND_COUNTS_EMPTY,
+            },
+            attachTo: document.querySelector('#spora-plugin-typst')!,
+        })
+        await flushPromises()
+
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+        const backdrop = dialog?.querySelector<HTMLElement>('[data-testid="open-picker-backdrop"]')
+        expect(backdrop).not.toBeNull()
+        // The backdrop class list is the contract: `absolute inset-0` to
+        // fill the dialog wrapper, `bg-black/40` for the dim. The click
+        // handler closes the modal — a separate sibling avoids the
+        // `e.target === wrapperRef` trick the native `<dialog>` used.
+        expect(backdrop?.className).toContain('absolute')
+        expect(backdrop?.className).toContain('inset-0')
+        expect(backdrop?.className).toContain('bg-black/40')
+
+        backdrop?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await flushPromises()
+        expect(wrapper.emitted('close')).toBeDefined()
+        wrapper.unmount()
+    })
+
+    it('closes on Escape (manual handler, since there is no native <dialog> now)', async () => {
+        const wrapper = mount(OpenPickerModal, {
+            props: {
+                open: true,
+                sources: [],
+                loading: false,
+                kind: 'all',
+                kindCounts: KIND_COUNTS_EMPTY,
+            },
+            attachTo: document.querySelector('#spora-plugin-typst')!,
+        })
+        await flushPromises()
+
+        // Document-level keydown listener installed in `onMounted`. ESC
+        // must reach the listener; focusing the search input first makes
+        // sure the handler doesn't get blocked by the input's own key
+        // handling (which catches ArrowDown/ArrowUp/Enter and ESC).
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        await flushPromises()
+        expect(wrapper.emitted('close')).toBeDefined()
         wrapper.unmount()
     })
 })

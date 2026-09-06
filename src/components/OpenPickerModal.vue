@@ -56,7 +56,7 @@ const sortDir = ref<SortDir>('desc')
 const activeIdx = ref(0)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const listRef = ref<HTMLDivElement | null>(null)
-const dialogRef = ref<HTMLDialogElement | null>(null)
+const wrapperRef = ref<HTMLDivElement | null>(null)
 
 /**
  * Static chip definitions. The label and aria-label are kept
@@ -156,9 +156,16 @@ function scrollActiveIntoView(): void {
 
 function onKey(e: KeyboardEvent): void {
     if (!props.open) return
-    // ESC is handled natively by <dialog> via showModal() — it calls
-    // .close() and fires the `close` event, which we forward to the
-    // parent. Don't intercept it here or we'd double-close.
+    // ESC is handled by us (we're not a native <dialog> any more).
+    // The previous native-dialog version relied on `showModal()` to
+    // emit the `close` event on Escape; the div-based wrapper below
+    // doesn't have that affordance, so the keystroke reaches the
+    // document-level handler installed in `onMounted`.
+    if (e.key === 'Escape') {
+        e.preventDefault()
+        close()
+        return
+    }
     if (document.activeElement === searchInputRef.value) {
         if (e.key === 'ArrowDown') {
             e.preventDefault()
@@ -257,29 +264,10 @@ watch(() => props.open, (open) => {
         search.value = ''
         activeIdx.value = 0
         void nextTick(() => {
-            dialogRef.value?.showModal()
             searchInputRef.value?.focus()
         })
     }
 })
-
-function onDialogNativeClose(): void {
-    // Native <dialog> ESC / form-method="dialog" calls .close()
-    // and dispatches the close event. Mirror that back through the
-    // component's emit so the parent (CompileForm) clears its
-    // `openPickerOpen` state and tears down the picker.
-    emit('close')
-}
-
-function onDialogClick(e: MouseEvent): void {
-    // Native <dialog> doesn't close on backdrop click by default.
-    // The click on the dialog element itself (not a descendant) is
-    // the backdrop area; any other target is content. Match the
-    // behaviour of the previous absolute-positioned backdrop div.
-    if (e.target === dialogRef.value) {
-        close()
-    }
-}
 
 onMounted(() => {
     document.addEventListener('keydown', onKey)
@@ -291,173 +279,196 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <dialog
-      v-if="open"
-      ref="dialogRef"
-      class="fixed inset-0 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
-      aria-label="Open playground file"
-      @close="onDialogNativeClose"
-      @click="onDialogClick"
+  <!--
+    The modal lives directly under the SFC mount tree (no `<Teleport>`)
+    so every Tailwind utility class resolves against
+    `#spora-plugin-typst` (`tailwind.config.ts → important: '#spora-plugin-typst'`).
+    An earlier version teleported the modal to `<body>` to "escape
+    parent overflow", but every utility on the teleported element fell
+    through (the descendant is outside the scoping ancestor) and the
+    dialog reverted to the UA `<dialog>` default — a small white box at
+    the viewport centre, no backdrop sizing, no flex centering.
+    `position: fixed` already positions relative to the viewport and
+    escapes any ancestor overflow / transform / filter, so a teleport
+    is unnecessary.
+  -->
+  <div
+    v-if="open"
+    ref="wrapperRef"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Open playground file"
+    data-testid="open-picker-dialog"
+  >
+    <!-- Backdrop is a sibling of the card (not a parent), so clicks on
+         the card don't trigger `close`; clicks on the dimmed area do. -->
+    <div
+      class="absolute inset-0 bg-black/40"
+      data-testid="open-picker-backdrop"
+      @click="close"
+    />
+    <div
+      class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
+      style="max-height: min(640px, calc(100vh - 2rem))"
+      tabindex="-1"
+      @keydown="onListKey"
     >
+      <header class="flex items-center gap-2 p-3 border-b border-border">
+        <input
+          id="open-picker-search"
+          ref="searchInputRef"
+          v-model="search"
+          type="text"
+          placeholder="Search files by name… (press / to focus)"
+          aria-label="Search playground files"
+          class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm focus:border-ring focus:ring-1 focus:ring-ring outline-none"
+          spellcheck="false"
+          autocomplete="off"
+        >
+        <button
+          type="button"
+          class="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          title="Close (Esc)"
+          @click="close"
+        >
+          Esc
+        </button>
+      </header>
+
       <div
-        class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
-        style="max-height: min(640px, calc(100vh - 2rem))"
-        tabindex="-1"
-        @keydown="onListKey"
+        v-if="sources.length > 0"
+        class="flex items-center gap-1.5 px-3 py-1.5 border-b border-border overflow-x-auto"
+        role="tablist"
+        aria-label="Filter playground files by pool"
       >
-        <header class="flex items-center gap-2 p-3 border-b border-border">
-          <input
-            id="open-picker-search"
-            ref="searchInputRef"
-            v-model="search"
-            type="text"
-            placeholder="Search files by name… (press / to focus)"
-            aria-label="Search playground files"
-            class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm focus:border-ring focus:ring-1 focus:ring-ring outline-none"
-            spellcheck="false"
-            autocomplete="off"
-          >
-          <button
-            type="button"
-            class="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-            title="Close (Esc)"
-            @click="close"
-          >
-            Esc
-          </button>
-        </header>
-
-        <div
-          v-if="sources.length > 0"
-          class="flex items-center gap-1.5 px-3 py-1.5 border-b border-border overflow-x-auto"
-          role="tablist"
-          aria-label="Filter playground files by pool"
+        <button
+          v-for="chip in kindChips"
+          :key="chip.value"
+          type="button"
+          role="tab"
+          :aria-selected="kind === chip.value"
+          :aria-label="chip.ariaLabel"
+          :data-testid="`open-picker-kind-${chip.value}`"
+          :class="[
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs whitespace-nowrap border transition-colors',
+            kind === chip.value
+              ? 'border-ring bg-primary text-primary-foreground'
+              : 'border-border bg-muted text-muted-foreground hover:text-foreground',
+          ]"
+          @click="selectKind(chip.value)"
         >
-          <button
-            v-for="chip in kindChips"
-            :key="chip.value"
-            type="button"
-            role="tab"
-            :aria-selected="kind === chip.value"
-            :aria-label="chip.ariaLabel"
-            :data-testid="`open-picker-kind-${chip.value}`"
+          <span>{{ chip.label }}</span>
+          <span
             :class="[
-              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs whitespace-nowrap border transition-colors',
-              kind === chip.value
-                ? 'border-ring bg-primary text-primary-foreground'
-                : 'border-border bg-muted text-muted-foreground hover:text-foreground',
+              'inline-flex items-center justify-center min-w-[1.25rem] px-1 rounded-full text-[10px] tabular-nums',
+              kind === chip.value ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-background text-muted-foreground',
             ]"
-            @click="selectKind(chip.value)"
-          >
-            <span>{{ chip.label }}</span>
-            <span
-              :class="[
-                'inline-flex items-center justify-center min-w-[1.25rem] px-1 rounded-full text-[10px] tabular-nums',
-                kind === chip.value ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-background text-muted-foreground',
-              ]"
-            >{{ kindBadgeValue(chip.value) }}</span>
-          </button>
-        </div>
-
-        <div
-          v-if="sources.length > 0"
-          class="grid gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border select-none"
-          style="grid-template-columns: 1fr 5rem 9rem;"
-        >
-          <button
-            type="button"
-            class="text-left hover:text-foreground"
-            @click="setSort('filename')"
-          >
-            File {{ sortArrow('filename') }}
-          </button>
-          <button
-            type="button"
-            class="text-right hover:text-foreground"
-            @click="setSort('byte_size')"
-          >
-            Size {{ sortArrow('byte_size') }}
-          </button>
-          <button
-            type="button"
-            class="text-right hover:text-foreground"
-            @click="setSort('updated_at')"
-          >
-            Updated {{ sortArrow('updated_at') }}
-          </button>
-        </div>
-
-        <div
-          ref="listRef"
-          class="flex-1 overflow-y-auto"
-        >
-          <div
-            v-if="loading"
-            class="px-3 py-6 text-center text-sm text-muted-foreground"
-          >
-            Loading…
-          </div>
-          <div
-            v-else-if="sources.length === 0"
-            data-testid="open-picker-empty-all"
-            class="px-3 py-6 text-center text-sm text-muted-foreground"
-          >
-            {{ emptyStateMessage }}
-          </div>
-          <div
-            v-else-if="filtered.length === 0"
-            data-testid="open-picker-empty-filtered"
-            class="px-3 py-6 text-center text-sm text-muted-foreground"
-          >
-            <template v-if="search !== ''">No files match “{{ search }}”.</template>
-            <template v-else>{{ emptyStateMessage }}</template>
-          </div>
-          <button
-            v-for="(s, idx) in filtered"
-            v-else
-            :key="s.id"
-            :data-source-id="s.id"
-            :data-source-kind="s.kind"
-            type="button"
-            :class="[
-              'grid gap-3 items-center w-full px-3 py-1 text-sm text-left border-b border-border last:border-b-0',
-              idx === activeIdx
-                ? 'bg-primary/10 text-foreground'
-                : 'hover:bg-muted text-foreground',
-            ]"
-            style="grid-template-columns: 1fr 5rem 9rem;"
-            @click="pick(s)"
-            @mouseenter="activeIdx = idx"
-          >
-            <span
-              class="font-mono truncate min-w-0"
-              :title="s.filename"
-            >{{ s.filename }}</span>
-            <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatBytes(s.byte_size) }}</span>
-            <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatUpdated(s.updated_at) }}</span>
-          </button>
-        </div>
-
-        <footer class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-[10px] text-muted-foreground">
-          <span>{{ filtered.length }} of {{ sources.length }} files</span>
-          <span class="flex items-center gap-4">
-            <span class="inline-flex items-center gap-1.5">
-              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">/</kbd>
-              <span>search</span>
-            </span>
-            <span class="inline-flex items-center gap-1.5">
-              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▲</kbd>
-              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▼</kbd>
-              <span>move</span>
-            </span>
-            <span class="inline-flex items-center gap-1.5">
-              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">↵</kbd>
-              <span>open</span>
-            </span>
-          </span>
-        </footer>
+          >{{ kindBadgeValue(chip.value) }}</span>
+        </button>
       </div>
-    </dialog>
-  </Teleport>
+
+      <div
+        v-if="sources.length > 0"
+        class="grid gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border select-none"
+        style="grid-template-columns: 1fr 5rem 9rem;"
+      >
+        <button
+          type="button"
+          class="text-left hover:text-foreground"
+          @click="setSort('filename')"
+        >
+          File {{ sortArrow('filename') }}
+        </button>
+        <button
+          type="button"
+          class="text-right hover:text-foreground"
+          @click="setSort('byte_size')"
+        >
+          Size {{ sortArrow('byte_size') }}
+        </button>
+        <button
+          type="button"
+          class="text-right hover:text-foreground"
+          @click="setSort('updated_at')"
+        >
+          Updated {{ sortArrow('updated_at') }}
+        </button>
+      </div>
+
+      <div
+        ref="listRef"
+        class="flex-1 overflow-y-auto"
+      >
+        <div
+          v-if="loading"
+          class="px-3 py-6 text-center text-sm text-muted-foreground"
+        >
+          Loading…
+        </div>
+        <div
+          v-else-if="sources.length === 0"
+          data-testid="open-picker-empty-all"
+          class="px-3 py-6 text-center text-sm text-muted-foreground"
+        >
+          {{ emptyStateMessage }}
+        </div>
+        <div
+          v-else-if="filtered.length === 0"
+          data-testid="open-picker-empty-filtered"
+          class="px-3 py-6 text-center text-sm text-muted-foreground"
+        >
+          <template v-if="search !== ''">
+            No files match “{{ search }}”.
+          </template>
+          <template v-else>
+            {{ emptyStateMessage }}
+          </template>
+        </div>
+        <button
+          v-for="(s, idx) in filtered"
+          v-else
+          :key="s.id"
+          :data-source-id="s.id"
+          :data-source-kind="s.kind"
+          type="button"
+          :class="[
+            'grid gap-3 items-center w-full px-3 py-1 text-sm text-left border-b border-border last:border-b-0',
+            idx === activeIdx
+              ? 'bg-primary/10 text-foreground'
+              : 'hover:bg-muted text-foreground',
+          ]"
+          style="grid-template-columns: 1fr 5rem 9rem;"
+          @click="pick(s)"
+          @mouseenter="activeIdx = idx"
+        >
+          <span
+            class="font-mono truncate min-w-0"
+            :title="s.filename"
+          >{{ s.filename }}</span>
+          <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatBytes(s.byte_size) }}</span>
+          <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatUpdated(s.updated_at) }}</span>
+        </button>
+      </div>
+
+      <footer class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-[10px] text-muted-foreground">
+        <span>{{ filtered.length }} of {{ sources.length }} files</span>
+        <span class="flex items-center gap-4">
+          <span class="inline-flex items-center gap-1.5">
+            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">/</kbd>
+            <span>search</span>
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▲</kbd>
+            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▼</kbd>
+            <span>move</span>
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">↵</kbd>
+            <span>open</span>
+          </span>
+        </span>
+      </footer>
+    </div>
+  </div>
 </template>
