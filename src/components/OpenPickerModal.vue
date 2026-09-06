@@ -18,7 +18,10 @@
  *
  * Keyboard:
  *   - /       focuses the search input
- *   - Esc     closes the modal
+ *   - Esc     closes the modal (native <dialog> auto-closes on Esc in
+ *             real browsers; the document-level keydown handler below
+ *             covers environments — including happy-dom — where the
+ *             UA doesn't dispatch the cancel/close sequence).
  *   - ↑ / ↓   moves the active row
  *   - Enter   opens the active row
  *
@@ -156,9 +159,18 @@ function scrollActiveIntoView(): void {
 
 function onKey(e: KeyboardEvent): void {
     if (!props.open) return
-    // ESC is handled natively by <dialog> via showModal() — it calls
-    // .close() and fires the `close` event, which we forward to the
-    // parent. Don't intercept it here or we'd double-close.
+    // ESC is handled here so the test environment (happy-dom) can
+    // exercise the close path. Real browsers auto-close the
+    // <dialog> on Esc via `cancel` → `close`, which would also
+    // reach this listener — we run first because keydown fires
+    // before the cancel default action, and `preventDefault()`
+    // suppresses the dialog's auto-close so the emit is the single
+    // source of truth for the parent's `open=false` transition.
+    if (e.key === 'Escape') {
+        e.preventDefault()
+        close()
+        return
+    }
     if (document.activeElement === searchInputRef.value) {
         if (e.key === 'ArrowDown') {
             e.preventDefault()
@@ -257,25 +269,23 @@ watch(() => props.open, (open) => {
         search.value = ''
         activeIdx.value = 0
         void nextTick(() => {
+            // Native <dialog> via showModal() gives the modal a
+            // UA-managed focus trap, the ::backdrop pseudo-element
+            // (styled via `backdrop:bg-black/40`), and ESC handling
+            // out of the box — all of which the previous
+            // <div role="dialog"> wrapper had to reimplement or
+            // skip. Sonar's `Web:S6819` also requires a real
+            // <dialog> for accessibility.
             dialogRef.value?.showModal()
             searchInputRef.value?.focus()
         })
     }
 })
 
-function onDialogNativeClose(): void {
-    // Native <dialog> ESC / form-method="dialog" calls .close()
-    // and dispatches the close event. Mirror that back through the
-    // component's emit so the parent (CompileForm) clears its
-    // `openPickerOpen` state and tears down the picker.
-    emit('close')
-}
-
 function onDialogClick(e: MouseEvent): void {
     // Native <dialog> doesn't close on backdrop click by default.
-    // The click on the dialog element itself (not a descendant) is
-    // the backdrop area; any other target is content. Match the
-    // behaviour of the previous absolute-positioned backdrop div.
+    // The click on the dialog element itself (not a descendant)
+    // is the ::backdrop area; any other target is content.
     if (e.target === dialogRef.value) {
         close()
     }
@@ -291,173 +301,199 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <dialog
-      v-if="open"
-      ref="dialogRef"
-      class="fixed inset-0 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
-      aria-label="Open playground file"
-      @close="onDialogNativeClose"
-      @click="onDialogClick"
+  <!--
+    Native <dialog> rendered directly in the SFC's mount tree — no
+    <Teleport>. `position: fixed` already positions relative to the
+    viewport and escapes any ancestor overflow / transform / filter,
+    so a teleport would only move the dialog outside `#spora-plugin-typst`
+    and break Tailwind utility resolution
+    (`tailwind.config.ts → important: '#spora-plugin-typst'`); see
+    the regression test in `OpenPickerModal.test.ts → positioning`.
+
+    The class list overrides the UA <dialog> defaults
+    (`position: absolute; margin: auto; padding: 1em; border: solid;
+    background: white; width/height: fit-content`). `open:flex`
+    switches the dialog into a flex container only after `showModal()`
+    adds the `open` attribute — the implicit display otherwise
+    inherits from the UA stylesheet.
+
+    The native <dialog> element has an implicit role of `dialog` and
+    (via `showModal()`) implicit `aria-modal="true"` semantics, so
+    the explicit `role` is redundant. We still set `aria-modal` and
+    `aria-label` for clarity, and the `data-testid` is the stable
+    selector the tests target — no need to reach for
+    `[role="dialog"][aria-modal="true"]`.
+  -->
+  <dialog
+    v-if="open"
+    ref="dialogRef"
+    class="fixed inset-0 z-50 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
+    aria-modal="true"
+    aria-label="Open playground file"
+    data-testid="open-picker-dialog"
+    @click="onDialogClick"
+  >
+    <div
+      class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
+      style="max-height: min(640px, calc(100vh - 2rem))"
+      tabindex="-1"
+      @keydown="onListKey"
     >
+      <header class="flex items-center gap-2 p-3 border-b border-border">
+        <input
+          id="open-picker-search"
+          ref="searchInputRef"
+          v-model="search"
+          type="text"
+          placeholder="Search files by name… (press / to focus)"
+          aria-label="Search playground files"
+          class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm focus:border-ring focus:ring-1 focus:ring-ring outline-none"
+          spellcheck="false"
+          autocomplete="off"
+        >
+        <button
+          type="button"
+          class="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          title="Close (Esc)"
+          @click="close"
+        >
+          Esc
+        </button>
+      </header>
+
       <div
-        class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
-        style="max-height: min(640px, calc(100vh - 2rem))"
-        tabindex="-1"
-        @keydown="onListKey"
+        v-if="sources.length > 0"
+        class="flex items-center gap-1.5 px-3 py-1.5 border-b border-border overflow-x-auto"
+        role="tablist"
+        aria-label="Filter playground files by pool"
       >
-        <header class="flex items-center gap-2 p-3 border-b border-border">
-          <input
-            id="open-picker-search"
-            ref="searchInputRef"
-            v-model="search"
-            type="text"
-            placeholder="Search files by name… (press / to focus)"
-            aria-label="Search playground files"
-            class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm focus:border-ring focus:ring-1 focus:ring-ring outline-none"
-            spellcheck="false"
-            autocomplete="off"
-          >
-          <button
-            type="button"
-            class="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-            title="Close (Esc)"
-            @click="close"
-          >
-            Esc
-          </button>
-        </header>
-
-        <div
-          v-if="sources.length > 0"
-          class="flex items-center gap-1.5 px-3 py-1.5 border-b border-border overflow-x-auto"
-          role="tablist"
-          aria-label="Filter playground files by pool"
+        <button
+          v-for="chip in kindChips"
+          :key="chip.value"
+          type="button"
+          role="tab"
+          :aria-selected="kind === chip.value"
+          :aria-label="chip.ariaLabel"
+          :data-testid="`open-picker-kind-${chip.value}`"
+          :class="[
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs whitespace-nowrap border transition-colors',
+            kind === chip.value
+              ? 'border-ring bg-primary text-primary-foreground'
+              : 'border-border bg-muted text-muted-foreground hover:text-foreground',
+          ]"
+          @click="selectKind(chip.value)"
         >
-          <button
-            v-for="chip in kindChips"
-            :key="chip.value"
-            type="button"
-            role="tab"
-            :aria-selected="kind === chip.value"
-            :aria-label="chip.ariaLabel"
-            :data-testid="`open-picker-kind-${chip.value}`"
+          <span>{{ chip.label }}</span>
+          <span
             :class="[
-              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs whitespace-nowrap border transition-colors',
-              kind === chip.value
-                ? 'border-ring bg-primary text-primary-foreground'
-                : 'border-border bg-muted text-muted-foreground hover:text-foreground',
+              'inline-flex items-center justify-center min-w-[1.25rem] px-1 rounded-full text-[10px] tabular-nums',
+              kind === chip.value ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-background text-muted-foreground',
             ]"
-            @click="selectKind(chip.value)"
-          >
-            <span>{{ chip.label }}</span>
-            <span
-              :class="[
-                'inline-flex items-center justify-center min-w-[1.25rem] px-1 rounded-full text-[10px] tabular-nums',
-                kind === chip.value ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-background text-muted-foreground',
-              ]"
-            >{{ kindBadgeValue(chip.value) }}</span>
-          </button>
-        </div>
-
-        <div
-          v-if="sources.length > 0"
-          class="grid gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border select-none"
-          style="grid-template-columns: 1fr 5rem 9rem;"
-        >
-          <button
-            type="button"
-            class="text-left hover:text-foreground"
-            @click="setSort('filename')"
-          >
-            File {{ sortArrow('filename') }}
-          </button>
-          <button
-            type="button"
-            class="text-right hover:text-foreground"
-            @click="setSort('byte_size')"
-          >
-            Size {{ sortArrow('byte_size') }}
-          </button>
-          <button
-            type="button"
-            class="text-right hover:text-foreground"
-            @click="setSort('updated_at')"
-          >
-            Updated {{ sortArrow('updated_at') }}
-          </button>
-        </div>
-
-        <div
-          ref="listRef"
-          class="flex-1 overflow-y-auto"
-        >
-          <div
-            v-if="loading"
-            class="px-3 py-6 text-center text-sm text-muted-foreground"
-          >
-            Loading…
-          </div>
-          <div
-            v-else-if="sources.length === 0"
-            data-testid="open-picker-empty-all"
-            class="px-3 py-6 text-center text-sm text-muted-foreground"
-          >
-            {{ emptyStateMessage }}
-          </div>
-          <div
-            v-else-if="filtered.length === 0"
-            data-testid="open-picker-empty-filtered"
-            class="px-3 py-6 text-center text-sm text-muted-foreground"
-          >
-            <template v-if="search !== ''">No files match “{{ search }}”.</template>
-            <template v-else>{{ emptyStateMessage }}</template>
-          </div>
-          <button
-            v-for="(s, idx) in filtered"
-            v-else
-            :key="s.id"
-            :data-source-id="s.id"
-            :data-source-kind="s.kind"
-            type="button"
-            :class="[
-              'grid gap-3 items-center w-full px-3 py-1 text-sm text-left border-b border-border last:border-b-0',
-              idx === activeIdx
-                ? 'bg-primary/10 text-foreground'
-                : 'hover:bg-muted text-foreground',
-            ]"
-            style="grid-template-columns: 1fr 5rem 9rem;"
-            @click="pick(s)"
-            @mouseenter="activeIdx = idx"
-          >
-            <span
-              class="font-mono truncate min-w-0"
-              :title="s.filename"
-            >{{ s.filename }}</span>
-            <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatBytes(s.byte_size) }}</span>
-            <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatUpdated(s.updated_at) }}</span>
-          </button>
-        </div>
-
-        <footer class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-[10px] text-muted-foreground">
-          <span>{{ filtered.length }} of {{ sources.length }} files</span>
-          <span class="flex items-center gap-4">
-            <span class="inline-flex items-center gap-1.5">
-              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">/</kbd>
-              <span>search</span>
-            </span>
-            <span class="inline-flex items-center gap-1.5">
-              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▲</kbd>
-              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▼</kbd>
-              <span>move</span>
-            </span>
-            <span class="inline-flex items-center gap-1.5">
-              <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">↵</kbd>
-              <span>open</span>
-            </span>
-          </span>
-        </footer>
+          >{{ kindBadgeValue(chip.value) }}</span>
+        </button>
       </div>
-    </dialog>
-  </Teleport>
+
+      <div
+        v-if="sources.length > 0"
+        class="grid gap-3 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border select-none"
+        style="grid-template-columns: 1fr 5rem 9rem;"
+      >
+        <button
+          type="button"
+          class="text-left hover:text-foreground"
+          @click="setSort('filename')"
+        >
+          File {{ sortArrow('filename') }}
+        </button>
+        <button
+          type="button"
+          class="text-right hover:text-foreground"
+          @click="setSort('byte_size')"
+        >
+          Size {{ sortArrow('byte_size') }}
+        </button>
+        <button
+          type="button"
+          class="text-right hover:text-foreground"
+          @click="setSort('updated_at')"
+        >
+          Updated {{ sortArrow('updated_at') }}
+        </button>
+      </div>
+
+      <div
+        ref="listRef"
+        class="flex-1 overflow-y-auto"
+      >
+        <div
+          v-if="loading"
+          class="px-3 py-6 text-center text-sm text-muted-foreground"
+        >
+          Loading…
+        </div>
+        <div
+          v-else-if="sources.length === 0"
+          data-testid="open-picker-empty-all"
+          class="px-3 py-6 text-center text-sm text-muted-foreground"
+        >
+          {{ emptyStateMessage }}
+        </div>
+        <div
+          v-else-if="filtered.length === 0"
+          data-testid="open-picker-empty-filtered"
+          class="px-3 py-6 text-center text-sm text-muted-foreground"
+        >
+          <template v-if="search !== ''">
+            No files match “{{ search }}”.
+          </template>
+          <template v-else>
+            {{ emptyStateMessage }}
+          </template>
+        </div>
+        <button
+          v-for="(s, idx) in filtered"
+          v-else
+          :key="s.id"
+          :data-source-id="s.id"
+          :data-source-kind="s.kind"
+          type="button"
+          :class="[
+            'grid gap-3 items-center w-full px-3 py-1 text-sm text-left border-b border-border last:border-b-0',
+            idx === activeIdx
+              ? 'bg-primary/10 text-foreground'
+              : 'hover:bg-muted text-foreground',
+          ]"
+          style="grid-template-columns: 1fr 5rem 9rem;"
+          @click="pick(s)"
+          @mouseenter="activeIdx = idx"
+        >
+          <span
+            class="font-mono truncate min-w-0"
+            :title="s.filename"
+          >{{ s.filename }}</span>
+          <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatBytes(s.byte_size) }}</span>
+          <span class="text-xs text-muted-foreground tabular-nums text-right">{{ formatUpdated(s.updated_at) }}</span>
+        </button>
+      </div>
+
+      <footer class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-[10px] text-muted-foreground">
+        <span>{{ filtered.length }} of {{ sources.length }} files</span>
+        <span class="flex items-center gap-4">
+          <span class="inline-flex items-center gap-1.5">
+            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">/</kbd>
+            <span>search</span>
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▲</kbd>
+            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▼</kbd>
+            <span>move</span>
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">↵</kbd>
+            <span>open</span>
+          </span>
+        </span>
+      </footer>
+    </div>
+  </dialog>
 </template>

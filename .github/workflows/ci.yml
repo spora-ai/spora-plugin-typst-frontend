@@ -42,11 +42,14 @@ jobs:
         run: npm test
 
       - name: Coverage
-        # Runs the same suite with the v8 coverage provider enabled
-        # so the SonarCloud scan job below has an lcov.info + JUnit
-        # XML report to ingest. Excluded files (main.ts / dev-main /
-        # shims.d.ts / types.ts) are mirrored in sonar-project.properties
-        # so the coverage view matches what SonarCloud sees.
+        # Runs the suite with the v8 coverage provider enabled so the
+        # artifact is available for debugging. The SonarCloud job
+        # below re-runs the same suite (it has its own working tree)
+        # and ingests coverage/lcov.info from there — it does NOT
+        # pick up this job's coverage/ directory. Excluded files
+        # (main.ts / dev-main / shims.d.ts / types.ts / *.vue) are
+        # mirrored in sonar-project.properties so the coverage view
+        # matches what SonarCloud sees.
         env:
           CI: '1'
         run: npm run test:coverage
@@ -137,10 +140,54 @@ jobs:
       - name: Install
         run: npm ci --ignore-scripts
 
+      # Generate the coverage report the JS/TS scanner ingests. The
+      # `lint-and-test` job above runs the same suite but doesn't share
+      # its working tree, so we re-run it here.
+      - name: Run tests with coverage
+        env:
+          CI: '1'
+        run: npm run test:coverage
+
+      # Fail loud if the report is missing. The scanner would otherwise
+      # exit 0 with "No coverage information will be saved" and the
+      # dashboard would show "Coverage is not yet visible" — which is
+      # harder to debug than a step that names the missing file.
+      - name: Verify coverage report
+        run: |
+          set -euo pipefail
+          if [ ! -s coverage/lcov.info ]; then
+            echo "::error::coverage/lcov.info is missing or empty — the scanner would publish 0% coverage."
+            echo "::error::Check that 'npm run test:coverage' succeeded and emitted ./coverage/lcov.info."
+            exit 1
+          fi
+          echo "coverage/lcov.info size: $(wc -c < coverage/lcov.info) bytes"
+          echo "covered files: $(grep -c '^SF:' coverage/lcov.info)"
+
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@ce8b54f8d1015e7e3cb1c2deb4c00e0c1b65e1d6 # v4.1.0
+        # v4.x is a composite action that calls `actions/cache@v4` without
+        # a SHA pin; that resolves to the now-deprecated cache v4.0.2 which
+        # GitHub Actions has started hard-failing (see run 34036318970 /
+        # job 101495022976). v4.2.2 has the same issue, and v5.x still emits
+        # the upstream "Vulnerability warning" annotation.
+        #
+        # v6.0.0 drops the cache step entirely and runs on node20, so the
+        # cache-v4.0.2 deprecation goes away. It also exposes `projectBaseDir`
+        # as a first-class input, which the action concatenates as
+        # `-Dsonar.projectBaseDir=...` — the only form the bundled scanner
+        # CLI 7.2.0 accepts (the legacy `--project-base-dir=...` flag we used
+        # with v4 is rejected with "Unrecognized option" — see run 34053421983
+        # / job 101541042208).
+        #
+        # Note: do NOT forward `SONAR_HOST_URL` into the step env. The
+        # repo has no such secret, so the var expands to an empty string,
+        # and the scanner 7.2.0 bootstrapper treats the empty string as a
+        # malformed SonarQube-Server host URL ("Expected URL scheme
+        # 'http' or 'https' but no scheme was found" — see run 34053707941
+        # / job 101541770325) instead of falling back to the
+        # `sonar.organization=spora-ai` org-based auto-resolution. SonarCloud
+        # auth is handled by SONAR_TOKEN alone.
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
-          args: --project-base-dir=${{ github.workspace }}
+          projectBaseDir: ${{ github.workspace }}
