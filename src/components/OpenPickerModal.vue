@@ -18,7 +18,10 @@
  *
  * Keyboard:
  *   - /       focuses the search input
- *   - Esc     closes the modal
+ *   - Esc     closes the modal (native <dialog> auto-closes on Esc in
+ *             real browsers; the document-level keydown handler below
+ *             covers environments — including happy-dom — where the
+ *             UA doesn't dispatch the cancel/close sequence).
  *   - ↑ / ↓   moves the active row
  *   - Enter   opens the active row
  *
@@ -56,7 +59,7 @@ const sortDir = ref<SortDir>('desc')
 const activeIdx = ref(0)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const listRef = ref<HTMLDivElement | null>(null)
-const wrapperRef = ref<HTMLDivElement | null>(null)
+const dialogRef = ref<HTMLDialogElement | null>(null)
 
 /**
  * Static chip definitions. The label and aria-label are kept
@@ -156,11 +159,13 @@ function scrollActiveIntoView(): void {
 
 function onKey(e: KeyboardEvent): void {
     if (!props.open) return
-    // ESC is handled by us (we're not a native <dialog> any more).
-    // The previous native-dialog version relied on `showModal()` to
-    // emit the `close` event on Escape; the div-based wrapper below
-    // doesn't have that affordance, so the keystroke reaches the
-    // document-level handler installed in `onMounted`.
+    // ESC is handled here so the test environment (happy-dom) can
+    // exercise the close path. Real browsers auto-close the
+    // <dialog> on Esc via `cancel` → `close`, which would also
+    // reach this listener — we run first because keydown fires
+    // before the cancel default action, and `preventDefault()`
+    // suppresses the dialog's auto-close so the emit is the single
+    // source of truth for the parent's `open=false` transition.
     if (e.key === 'Escape') {
         e.preventDefault()
         close()
@@ -264,10 +269,27 @@ watch(() => props.open, (open) => {
         search.value = ''
         activeIdx.value = 0
         void nextTick(() => {
+            // Native <dialog> via showModal() gives the modal a
+            // UA-managed focus trap, the ::backdrop pseudo-element
+            // (styled via `backdrop:bg-black/40`), and ESC handling
+            // out of the box — all of which the previous
+            // <div role="dialog"> wrapper had to reimplement or
+            // skip. Sonar's `Web:S6819` also requires a real
+            // <dialog> for accessibility.
+            dialogRef.value?.showModal()
             searchInputRef.value?.focus()
         })
     }
 })
+
+function onDialogClick(e: MouseEvent): void {
+    // Native <dialog> doesn't close on backdrop click by default.
+    // The click on the dialog element itself (not a descendant)
+    // is the ::backdrop area; any other target is content.
+    if (e.target === dialogRef.value) {
+        close()
+    }
+}
 
 onMounted(() => {
     document.addEventListener('keydown', onKey)
@@ -280,34 +302,37 @@ onBeforeUnmount(() => {
 
 <template>
   <!--
-    The modal lives directly under the SFC mount tree (no `<Teleport>`)
-    so every Tailwind utility class resolves against
-    `#spora-plugin-typst` (`tailwind.config.ts → important: '#spora-plugin-typst'`).
-    An earlier version teleported the modal to `<body>` to "escape
-    parent overflow", but every utility on the teleported element fell
-    through (the descendant is outside the scoping ancestor) and the
-    dialog reverted to the UA `<dialog>` default — a small white box at
-    the viewport centre, no backdrop sizing, no flex centering.
-    `position: fixed` already positions relative to the viewport and
-    escapes any ancestor overflow / transform / filter, so a teleport
-    is unnecessary.
+    Native <dialog> rendered directly in the SFC's mount tree — no
+    <Teleport>. `position: fixed` already positions relative to the
+    viewport and escapes any ancestor overflow / transform / filter,
+    so a teleport would only move the dialog outside `#spora-plugin-typst`
+    and break Tailwind utility resolution
+    (`tailwind.config.ts → important: '#spora-plugin-typst'`); see
+    the regression test in `OpenPickerModal.test.ts → positioning`.
+
+    The class list overrides the UA <dialog> defaults
+    (`position: absolute; margin: auto; padding: 1em; border: solid;
+    background: white; width/height: fit-content`). `open:flex`
+    switches the dialog into a flex container only after `showModal()`
+    adds the `open` attribute — the implicit display otherwise
+    inherits from the UA stylesheet.
+
+    The explicit `role="dialog"` + `aria-modal="true"` mirror what the
+    <dialog> element conveys implicitly; they're kept as redundant
+    attributes so the existing tests can target the element via
+    `[role="dialog"][aria-modal="true"]` without branching on whether
+    the underlying element is a <dialog> or a <div>.
   -->
-  <div
+  <dialog
     v-if="open"
-    ref="wrapperRef"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    ref="dialogRef"
+    class="fixed inset-0 z-50 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
     role="dialog"
     aria-modal="true"
     aria-label="Open playground file"
     data-testid="open-picker-dialog"
+    @click="onDialogClick"
   >
-    <!-- Backdrop is a sibling of the card (not a parent), so clicks on
-         the card don't trigger `close`; clicks on the dimmed area do. -->
-    <div
-      class="absolute inset-0 bg-black/40"
-      data-testid="open-picker-backdrop"
-      @click="close"
-    />
     <div
       class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
       style="max-height: min(640px, calc(100vh - 2rem))"
@@ -470,5 +495,5 @@ onBeforeUnmount(() => {
         </span>
       </footer>
     </div>
-  </div>
+  </dialog>
 </template>

@@ -9,14 +9,13 @@
  * switches don't refetch.
  *
  * Test setup note: the modal is mounted inside the SFC's normal
- * render tree (no Teleport), and `attachTo: document.body`
+ * render tree (no <Teleport>), and `attachTo: document.body`
  * ensures the rendered subtree is reachable via querySelector.
  * Test assertions reach into `document.body` rather than the
  * wrapper's HTML because the rendered fragment is in the wrapper
  * that's been appended to body, not in the test wrapper's element tree.
  * Tests that check the Tailwind scoping (`#spora-plugin-typst`)
  * rebuild the host's slot wrapper in beforeEach.
- * wrapper's element tree.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -50,10 +49,10 @@ function kindCountsFromSources(rows: PlaygroundSourceSummary[]): Record<Playgrou
 }
 
 beforeEach(() => {
-    // Reset <dialog> state between tests. The modal uses
-    // `<Teleport to="body">` to escape any parent overflow, so
-    // every test has to clear `document.body` before mounting or
-    // the previous dialog stays mounted and pollutes the assertions.
+    // Reset body between tests. The modal mounts into whatever
+    // `attachTo` points at (the slot wrapper for the positioning
+    // tests, document.body for the rest), and queries read back
+    // from the document; clearing body keeps assertions isolated.
     document.body.innerHTML = ''
 })
 
@@ -282,12 +281,13 @@ describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
     // The host SPA's `PluginAppPage` wraps the plugin mount in
     // `<div id="spora-plugin-typst">`; every Tailwind utility is generated
     // beneath that ID (`tailwind.config.ts → important: '#spora-plugin-typst'`).
-    // When the modal is teleported to `<body>`, the teleported subtree is
-    // outside the scoping ancestor and every utility class falls through —
-    // the modal reverts to the UA `<dialog>` default (small white box at
-    // the viewport centre, no backdrop sizing, no flex centering). These
-    // tests rebuild the host's slot wrapper in happy-dom so the regression
-    // can be caught without a real browser.
+    // A teleported subtree would sit outside the scoping ancestor and
+    // every utility class would fall through — re-introducing the bug
+    // where the modal reverted to UA defaults and lost its centering.
+    // The modal now uses a native <dialog> (for accessibility +
+    // Sonar's `Web:S6819`) rendered directly in the SFC's mount tree,
+    // so the assertions below guard against any future change that
+    // teleports it back out of `#spora-plugin-typst`.
     beforeEach(() => {
         document.body.innerHTML = ''
         const wrap = document.createElement('div')
@@ -316,7 +316,7 @@ describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
         wrapper.unmount()
     })
 
-    it('renders the modal as a div, not a native <dialog>', () => {
+    it('renders the modal as a native <dialog>, not a div with role="dialog"', () => {
         const wrapper = mount(OpenPickerModal, {
             props: {
                 open: true,
@@ -328,15 +328,17 @@ describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
             attachTo: document.querySelector('#spora-plugin-typst')!,
         })
 
-        // `<dialog>` UA positioning (`position: absolute; margin: auto; padding: 1em;
-        // border: solid; background: white`) was what we fought with the
-        // scoped utilities; the div wrapper restores the plain CSS pattern
-        // the suite of positioning utilities expects.
-        expect(document.querySelector('dialog')).toBeNull()
+        // Sonar `Web:S6819` requires a native <dialog> for accessibility
+        // (UA-managed focus trap + ::backdrop + ESC handling). The earlier
+        // `<div role="dialog">` form was flagged as a code smell; if a
+        // future refactor regresses to that shape, this assertion catches
+        // it before the next scan round.
+        expect(document.querySelector('dialog')).not.toBeNull()
+        expect(document.querySelector('div[role="dialog"]')).toBeNull()
         wrapper.unmount()
     })
 
-    it('renders a sibling backdrop div that closes the modal on click', async () => {
+    it('closes the modal when the backdrop (the dialog element itself) is clicked', async () => {
         const wrapper = mount(OpenPickerModal, {
             props: {
                 open: true,
@@ -349,24 +351,20 @@ describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
         })
         await flushPromises()
 
+        // Native <dialog> doesn't close on backdrop click by default;
+        // the UA-managed ::backdrop is purely visual. The component
+        // watches clicks on the dialog element itself (not a descendant)
+        // and routes those back through the `close` emit.
         const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
-        const backdrop = dialog?.querySelector<HTMLElement>('[data-testid="open-picker-backdrop"]')
-        expect(backdrop).not.toBeNull()
-        // The backdrop class list is the contract: `absolute inset-0` to
-        // fill the dialog wrapper, `bg-black/40` for the dim. The click
-        // handler closes the modal — a separate sibling avoids the
-        // `e.target === wrapperRef` trick the native `<dialog>` used.
-        expect(backdrop?.className).toContain('absolute')
-        expect(backdrop?.className).toContain('inset-0')
-        expect(backdrop?.className).toContain('bg-black/40')
-
-        backdrop?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        expect(dialog).not.toBeNull()
+        expect(dialog?.className).toContain('backdrop:bg-black/40')
+        dialog?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         await flushPromises()
         expect(wrapper.emitted('close')).toBeDefined()
         wrapper.unmount()
     })
 
-    it('closes on Escape (manual handler, since there is no native <dialog> now)', async () => {
+    it('closes on Escape via the document-level keydown handler', async () => {
         const wrapper = mount(OpenPickerModal, {
             props: {
                 open: true,
@@ -379,10 +377,11 @@ describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
         })
         await flushPromises()
 
-        // Document-level keydown listener installed in `onMounted`. ESC
-        // must reach the listener; focusing the search input first makes
-        // sure the handler doesn't get blocked by the input's own key
-        // handling (which catches ArrowDown/ArrowUp/Enter and ESC).
+        // happy-dom doesn't implement the UA's auto-close-on-Esc for
+        // <dialog>, so the document-level keydown listener installed
+        // in `onMounted` is the actual mechanism under test. Real
+        // browsers route Esc through `cancel` → `close` on the dialog
+        // itself; either path converges on the `close` emit.
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
         await flushPromises()
         expect(wrapper.emitted('close')).toBeDefined()
