@@ -307,7 +307,7 @@ describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
             attachTo: document.querySelector('#spora-plugin-typst')!,
         })
 
-        const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+        const dialog = document.querySelector<HTMLElement>('[data-testid="open-picker-dialog"]')
         expect(dialog).not.toBeNull()
         // If the dialog is teleported to <body>, `closest('#spora-plugin-typst')`
         // walks past the host slot and returns null — the structural failure
@@ -355,7 +355,7 @@ describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
         // the UA-managed ::backdrop is purely visual. The component
         // watches clicks on the dialog element itself (not a descendant)
         // and routes those back through the `close` emit.
-        const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+        const dialog = document.querySelector<HTMLElement>('[data-testid="open-picker-dialog"]')
         expect(dialog).not.toBeNull()
         expect(dialog?.className).toContain('backdrop:bg-black/40')
         dialog?.dispatchEvent(new MouseEvent('click', { bubbles: true }))

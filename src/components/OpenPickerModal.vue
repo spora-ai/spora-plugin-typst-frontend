@@ -317,17 +317,17 @@ onBeforeUnmount(() => {
     adds the `open` attribute — the implicit display otherwise
     inherits from the UA stylesheet.
 
-    The explicit `role="dialog"` + `aria-modal="true"` mirror what the
-    <dialog> element conveys implicitly; they're kept as redundant
-    attributes so the existing tests can target the element via
-    `[role="dialog"][aria-modal="true"]` without branching on whether
-    the underlying element is a <dialog> or a <div>.
+    The native <dialog> element has an implicit role of `dialog` and
+    (via `showModal()`) implicit `aria-modal="true"` semantics, so
+    the explicit `role` is redundant. We still set `aria-modal` and
+    `aria-label` for clarity, and the `data-testid` is the stable
+    selector the tests target — no need to reach for
+    `[role="dialog"][aria-modal="true"]`.
   -->
   <dialog
     v-if="open"
     ref="dialogRef"
     class="fixed inset-0 z-50 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
-    role="dialog"
     aria-modal="true"
     aria-label="Open playground file"
     data-testid="open-picker-dialog"
