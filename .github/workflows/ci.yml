@@ -138,7 +138,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@ce8b54f8d1015e7e3cb1c2deb4c00e0c1b65e1d6 # v4.1.0
+        uses: SonarSource/sonarqube-scan-action@1b442ee39ac3fa7c2acdd410208dcb2bcfaae6c4 # v4.1.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
