@@ -2,42 +2,28 @@
 /**
  * Card view of the principal's template library.
  *
- * Each card shows the basename + size + origin chip; an inline
- * `<details>` block reveals the source on click. Skill-shipped
- * templates (`origin: 'skill'`) render with the lock badge and a
- * disabled delete button — the API would 422 them anyway.
+ * Skill-shipped entries (`origin: 'skill'`) render read-only.
  *
- * Source-preview handling: when the user expands a card for the
- * first time, we fetch the bytes via {@see getTemplate} and cache
- * the highlighted HTML in `highlightedByName` so subsequent
- * toggles don't re-highlight. The previous shape called an `async`
- * function inline as the `<pre>`'s text content, which Vue
- * stringifies to `[object Promise]` because the function returns
- * a Promise before the body resolves.
+ * Open state: `<details>` is browser-native and Vue must NOT bind
+ * `:open` — any two-way binding with `@toggle` ping-pongs the
+ * state on every keystroke-style toggle. We let the browser own
+ * the open attribute and mirror which cards are open into a
+ * `Set<string>` via the `toggle` event; the Set drives only the
+ * `md:col-span-2` styling and the first-open fetch trigger.
  *
- * Layout: cards default to two columns at `md` and above. When a
- * card is open, it spans `md:col-span-2` so the source preview
- * has the full content width to breathe in — half a page was
- * unreadable for typical reports / letters.
- *
- * Ordering: principal uploads come first (operator's own work),
- * then a section divider, then the skill-shipped built-ins on a
- * muted background so the visual hierarchy makes the boundary
- * obvious at a glance.
- *
- * Highlighting: the source body is wrapped by
- * `highlightTypst()` (see `src/typst-highlight.ts`) which emits
- * `<span class="typst-…">` tokens. hljs escapes its output, so
- * rendering the result with `v-html` is XSS-safe.
+ * Source-preview handling: first expand fetches bytes via
+ * {@see getTemplate} and caches the highlighted HTML in
+ * `highlightedByName` so subsequent toggles don't re-highlight.
+ * hljs escapes its output, so `v-html` is XSS-safe.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ApiError } from '../api/client'
 import { getTemplate } from '../api/templates'
 import { highlightTypst } from 'highlightjs-typst/highlight'
 import { useResourceStore } from '../stores/resources'
 
 const store = useResourceStore()
-const openId = ref<string | null>(null)
+const openNames = ref<Set<string>>(new Set())
 const sourceByName = ref<Record<string, string>>({})
 const highlightedByName = ref<Record<string, string>>({})
 const loadingName = ref<string | null>(null)
@@ -65,8 +51,18 @@ const skillTemplates = computed(() =>
         .sort((a, b) => a.name.localeCompare(b.name)),
 )
 
-function togglePreview(name: string): void {
-    openId.value = openId.value === name ? null : name
+function onToggle(name: string, event: Event): void {
+    const target = event.target as HTMLDetailsElement
+    const wasOpen = openNames.value.has(name)
+    const next = new Set(openNames.value)
+    if (target.open) next.add(name)
+    else next.delete(name)
+    openNames.value = next
+    if (target.open && !wasOpen) {
+        // First expand only — re-opens of an already-loaded card
+        // skip the fetch because `sourceByName` is cached.
+        void ensureSource(name)
+    }
 }
 
 async function ensureSource(name: string): Promise<void> {
@@ -97,17 +93,15 @@ async function confirmAndDelete(name: string): Promise<void> {
         const nextHighlighted = { ...highlightedByName.value }
         delete nextHighlighted[name]
         highlightedByName.value = nextHighlighted
-        if (openId.value === name) openId.value = null
+        if (openNames.value.has(name)) {
+            const nextOpen = new Set(openNames.value)
+            nextOpen.delete(name)
+            openNames.value = nextOpen
+        }
     } catch {
         // store.error already populated
     }
 }
-
-watch(openId, async (name) => {
-    if (name !== null) {
-        await ensureSource(name)
-    }
-})
 
 const hasTemplates = computed(() => (store.templates ?? []).length > 0)
 
@@ -136,7 +130,7 @@ onMounted(() => {
                     :key="template.name"
                     :class="[
                         'rounded-lg border border-border bg-card p-4 space-y-2',
-                        openId === template.name ? 'md:col-span-2' : '',
+                        openNames.has(template.name) ? 'md:col-span-2' : '',
                     ]"
                 >
                     <div class="flex items-start justify-between gap-2">
@@ -156,11 +150,10 @@ onMounted(() => {
                     </div>
                     <details
                         class="text-xs"
-                        :open="openId === template.name"
-                        @toggle="togglePreview(template.name)"
+                        @toggle="onToggle(template.name, $event)"
                     >
                         <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
-                        <div v-if="openId === template.name" class="mt-2">
+                        <div v-if="openNames.has(template.name)" class="mt-2">
                             <div
                                 v-if="loadingName === template.name"
                                 class="p-2 text-muted-foreground"
@@ -194,7 +187,7 @@ onMounted(() => {
                         :key="template.name"
                         :class="[
                             'rounded-lg border border-border bg-muted/40 p-4 space-y-2',
-                            openId === template.name ? 'md:col-span-2' : '',
+                            openNames.has(template.name) ? 'md:col-span-2' : '',
                         ]"
                     >
                         <div class="flex items-start justify-between gap-2">
@@ -215,11 +208,10 @@ onMounted(() => {
                         </div>
                         <details
                             class="text-xs"
-                            :open="openId === template.name"
-                            @toggle="togglePreview(template.name)"
+                            @toggle="onToggle(template.name, $event)"
                         >
                             <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
-                            <div v-if="openId === template.name" class="mt-2">
+                            <div v-if="openNames.has(template.name)" class="mt-2">
                                 <div
                                     v-if="loadingName === template.name"
                                     class="p-2 text-muted-foreground"

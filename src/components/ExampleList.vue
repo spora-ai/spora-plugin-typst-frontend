@@ -2,28 +2,19 @@
 /**
  * Card view of the principal's example pattern library.
  *
- * Same shape as {@see TemplateList}: card with basename + size +
- * origin chip + inline `<details>` source preview. Skill-shipped
- * examples (`origin: 'skill'`) render with the lock badge and a
- * disabled delete button.
- *
- * Ordering: principal uploads first (operator's own work), then
- * a "Built-in" divider, then the skill-shipped entries on a muted
- * background so the boundary is obvious at a glance.
- *
- * Source-preview handling mirrors TemplateList: cache the
- * highlighted HTML in `highlightedByName` and only fetch + tokenize
- * on first expand. The open card spans `md:col-span-2` so the
- * preview has the full content width.
+ * Mirrors {@see TemplateList}: skill-shipped entries are read-only;
+ * `<details>` is browser-native and Vue mirrors the open set into a
+ * `Set<string>` so we get the `md:col-span-2` styling without
+ * driving `:open` (which would ping-pong with `@toggle`).
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ApiError } from '../api/client'
 import { getExample } from '../api/examples'
 import { highlightTypst } from 'highlightjs-typst/highlight'
 import { useResourceStore } from '../stores/resources'
 
 const store = useResourceStore()
-const openId = ref<string | null>(null)
+const openNames = ref<Set<string>>(new Set())
 const sourceByName = ref<Record<string, string>>({})
 const highlightedByName = ref<Record<string, string>>({})
 const loadingName = ref<string | null>(null)
@@ -48,8 +39,18 @@ const skillExamples = computed(() =>
         .sort((a, b) => a.name.localeCompare(b.name)),
 )
 
-function togglePreview(name: string): void {
-    openId.value = openId.value === name ? null : name
+function onToggle(name: string, event: Event): void {
+    const target = event.target as HTMLDetailsElement
+    const wasOpen = openNames.value.has(name)
+    const next = new Set(openNames.value)
+    if (target.open) next.add(name)
+    else next.delete(name)
+    openNames.value = next
+    if (target.open && !wasOpen) {
+        // First expand only — re-opens skip the fetch because
+        // `sourceByName` is cached.
+        void ensureSource(name)
+    }
 }
 
 async function ensureSource(name: string): Promise<void> {
@@ -80,17 +81,15 @@ async function confirmAndDelete(name: string): Promise<void> {
         const nextHighlighted = { ...highlightedByName.value }
         delete nextHighlighted[name]
         highlightedByName.value = nextHighlighted
-        if (openId.value === name) openId.value = null
+        if (openNames.value.has(name)) {
+            const nextOpen = new Set(openNames.value)
+            nextOpen.delete(name)
+            openNames.value = nextOpen
+        }
     } catch {
         // store.error already populated
     }
 }
-
-watch(openId, async (name) => {
-    if (name !== null) {
-        await ensureSource(name)
-    }
-})
 
 const hasExamples = computed(() => (store.examples ?? []).length > 0)
 
@@ -119,7 +118,7 @@ onMounted(() => {
                     :key="example.name"
                     :class="[
                         'rounded-lg border border-border bg-card p-4 space-y-2',
-                        openId === example.name ? 'md:col-span-2' : '',
+                        openNames.has(example.name) ? 'md:col-span-2' : '',
                     ]"
                 >
                     <div class="flex items-start justify-between gap-2">
@@ -139,11 +138,10 @@ onMounted(() => {
                     </div>
                     <details
                         class="text-xs"
-                        :open="openId === example.name"
-                        @toggle="togglePreview(example.name)"
+                        @toggle="onToggle(example.name, $event)"
                     >
                         <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
-                        <div v-if="openId === example.name" class="mt-2">
+                        <div v-if="openNames.has(example.name)" class="mt-2">
                             <div
                                 v-if="loadingName === example.name"
                                 class="p-2 text-muted-foreground"
@@ -172,14 +170,14 @@ onMounted(() => {
                     <span class="flex-1 border-t border-border" />
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div
-                        v-for="example in skillExamples"
-                        :key="example.name"
-                        :class="[
-                            'rounded-lg border border-border bg-muted/40 p-4 space-y-2',
-                            openId === example.name ? 'md:col-span-2' : '',
-                        ]"
-                    >
+<div
+                            v-for="example in skillExamples"
+                            :key="example.name"
+                            :class="[
+                                'rounded-lg border border-border bg-muted/40 p-4 space-y-2',
+                                openNames.has(example.name) ? 'md:col-span-2' : '',
+                            ]"
+                        >
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0">
                                 <div class="font-mono text-sm text-foreground truncate">{{ example.name }}</div>
@@ -198,11 +196,10 @@ onMounted(() => {
                         </div>
                         <details
                             class="text-xs"
-                            :open="openId === example.name"
-                            @toggle="togglePreview(example.name)"
+                            @toggle="onToggle(example.name, $event)"
                         >
                             <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
-                            <div v-if="openId === example.name" class="mt-2">
+                            <div v-if="openNames.has(example.name)" class="mt-2">
                                 <div
                                     v-if="loadingName === example.name"
                                     class="p-2 text-muted-foreground"
