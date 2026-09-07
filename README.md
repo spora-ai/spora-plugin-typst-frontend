@@ -4,14 +4,15 @@ Vue 3 admin SPA for [`spora-plugin-typst`](../spora-plugin-typst). Built and shi
 
 ## What's in the box
 
-Four tabs behind the plugin's `/apps/typst` admin slot:
+Five tabs behind the plugin's `/apps/typst` admin slot:
 
 | Tab | Purpose | Backend endpoints consumed |
 | --- | --- | --- |
 | **Fonts** | Drag-drop upload + table view of the principal's font library. Skill-shipped Inter OFL is read-only; principal uploads can be deleted. | `GET /typst/fonts`, `POST /typst/fonts`, `DELETE /typst/fonts/{name}` |
-| **Examples** | `.typ` template upload + card view with inline source preview. Same skill-shipped vs principal distinction as fonts. | `GET /typst/examples`, `POST /typst/examples`, `DELETE /typst/examples/{name}` |
-| **Images** | Image upload + thumbnail grid. Each row carries the canonical `/api/v1/assets/<uuid>.<ext>` URL — copyable into Typst `#image("…")` source. | `GET /typst/images`, `POST /typst/images`, `DELETE /typst/images/{id}` |
-| **Playground** | Single-shot Typst editor with format selector. Calls `POST /api/v1/typst/compile` when available, with a "Backend compile endpoint not yet shipped" notice if the endpoint 404s. | `POST /typst/compile` (optional; follow-up PR) |
+| **Templates** | Reusable `.typ` template upload + card view with inline source preview. Skill-shipped vs principal distinction as fonts. | `GET /typst/templates`, `POST /typst/templates`, `DELETE /typst/templates/{name}` |
+| **Examples** | `.typ` example upload + card view with inline source preview. Same skill-shipped vs principal distinction as fonts. | `GET /typst/examples`, `POST /typst/examples`, `DELETE /typst/examples/{name}` |
+| **Images** | Image upload + thumbnail grid. Each row carries the canonical `/api/v1/assets/<uuid>.<ext>` URL — copyable into Typst `#image("…")` source. | `GET /typst/images`, `POST /typst/images`, `DELETE /typst/images/{name}` |
+| **Playground** | Single-shot Typst editor with format selector. `POST /api/v1/typst/compile` is always available; failures surface in the in-page error banner. | `POST /api/v1/typst/compile`, `GET /api/v1/typst/sources[?principal_id=N&kind=…]` |
 
 ## Layout
 
@@ -27,32 +28,60 @@ Four tabs behind the plugin's `/apps/typst` admin slot:
 │   ├── dev-main.ts                          # standalone `npm run dev` mount
 │   ├── style.css                            # @tailwind components/utilities (no preflight — host owns the reset)
 │   ├── shims.d.ts                           # PluginHostContext contract
-│   ├── types.ts                             # wire shapes for the four resource kinds
+│   ├── types.ts                             # wire shapes for the resource kinds
 │   ├── api/
 │   │   ├── client.ts                        # setApi/getApi/ApiError — bridge to host's typed REST client
 │   │   ├── fonts.ts
+│   │   ├── templates.ts
 │   │   ├── examples.ts
-│   │   └── images.ts
+│   │   ├── images.ts
+│   │   ├── sources.ts
+│   │   ├── compile.ts
+│   │   ├── principals.ts
+│   │   └── media-archive.ts
 │   ├── stores/
-│   │   ├── resources.ts                     # fonts + examples (tier-1 + tier-2)
-│   │   └── images.ts                        # per-principal image library
+│   │   ├── resources.ts                     # fonts + templates + examples (tier-1 + tier-2)
+│   │   ├── images.ts                        # per-principal image library
+│   │   ├── sources.ts                       # playground source rows
+│   │   └── principals.ts                    # principal chip row
+│   ├── composables/
+│   │   └── useResourceCardList.ts           # shared card-list logic for templates + examples
 │   ├── components/
 │   │   ├── AlertBanner.vue
 │   │   ├── FontUploader.vue
 │   │   ├── FontList.vue
+│   │   ├── TemplateUploader.vue
+│   │   ├── TemplateList.vue
 │   │   ├── ExampleUploader.vue
 │   │   ├── ExampleList.vue
 │   │   ├── ImageUploader.vue
 │   │   ├── ImageList.vue
+│   │   ├── PrincipalChipRow.vue
+│   │   ├── OpenPickerModal.vue
+│   │   ├── ResourceCardList.vue
 │   │   └── CompileForm.vue
 │   └── pages/
-│       └── TypstPage.vue                    # 4-tab page (single route)
+│       └── TypstPage.vue                    # 5-tab page (single route)
 ├── scripts/
 │   ├── smoke.js                             # static-analysis guard on the IIFE bundle + stylesheet scope
 │   └── clean.js
 ├── tests/
-│   ├── api/client.test.ts
-│   └── stores/resources.test.ts
+│   ├── api/
+│   │   ├── client.test.ts
+│   │   ├── compile.test.ts
+│   │   └── templates.test.ts
+│   ├── stores/
+│   │   ├── images.test.ts
+│   │   ├── resources.test.ts
+│   │   ├── resources-examples.test.ts
+│   │   ├── sources.test.ts
+│   │   └── sources-principal.test.ts
+│   ├── components/
+│   │   ├── FontList.test.ts
+│   │   └── OpenPickerModal.test.ts
+│   ├── composables/
+│   │   └── useResourceCardList.test.ts
+│   └── pages/
 ├── .github/workflows/ci.yml                 # lint + test + build + smoke + size-budget
 └── index.html                               # `npm run dev` mount target
 ```
@@ -67,34 +96,39 @@ The bundle declares `important: '#spora-plugin-typst'` in Tailwind config — ev
 
 ### Host contract
 
-The bundle is mounted by `spora-frontend`'s `PluginAppPage.vue`, which passes a `PluginHostContext` to `mount()`. The context exposes `api` (typed REST client with CSRF + envelope unwrap), `pinia` (host's Pinia — we don't `setActivePinia(host.pinia)` because that would collide with the host's stores), `theme`, and `router`. The plugin installs a *local* Pinia for plugin-only state (the resource store, the image store).
+The bundle is mounted by `spora-frontend`'s `PluginAppPage.vue`, which passes a `PluginHostContext` to `mount()`. The context exposes `api` (typed REST client with CSRF + envelope unwrap), `pinia` (host's Pinia — we don't `setActivePinia(host.pinia)` because that would collide with the host's stores), `theme`, and `router`. The plugin installs a *local* Pinia for plugin-only state (the resource store, the image store, the sources store, the principals store).
 
 `api/client.ts → setApi(...)` is called once per `mount()`. The rest of the plugin reads through `getApi()` at call-time, so the host's CSRF token / base URL / envelope unwrap is preserved without re-implementation.
 
-### Architectural distinction from fonts/examples
+### Architectural distinction from fonts/templates/examples
 
-Fonts and examples are plugin-private files. Images are full `media_assets` rows — the chat UI's `MediaEmbed` markdown references them via the canonical `/api/v1/assets/<uuid>.<ext>` URL, the media library's LIST endpoint sees them with the `plugin_slug='spora-plugin-typst'` filter, and the Media Archive plugin's `VersionsStrip` UI renders thumbnails when that plugin is installed. This split keeps font/example management plugin-internal while letting images participate in the operator's wider media surface.
+Fonts, templates, examples, and images are all plugin-private filesystem files under `<storage>/typst/<kind>/<principal>/<name>`. The Playground tab also surfaces the cross-plugin media archive (`GET /api/v1/media?types=image`) for operators who want to pull in images uploaded by other plugins.
 
 ## Quality gates
 
 ```
 npm run lint      ESLint over src/, tests/, *.ts, *.vue
-npm test          Vitest (8 cases, ~280ms)
+npm test          Vitest (~30+ cases, parallel: --parallel --processes=auto)
 npm run build     vue-tsc --noEmit + vite build → frontend/main.js + frontend/style.css
 npm run smoke     Static-analysis guard on the IIFE bundle + stylesheet scope
 ```
 
-The CI pipeline runs all four in sequence on every push and PR. A size-budget job fails if `main.js + style.css` exceed 200 KB pre-gzip (current build: 36.9 KB).
+The CI pipeline runs all four in sequence on every push and PR. A size-budget job fails if `main.js + style.css` exceed 200 KB pre-gzip.
 
 ## Depends on
 
-`spora-ai/spora-plugin-typst#feat/typst-images` — the backend plugin must be merged first; the frontend consumes:
+`spora-ai/spora-plugin-typst` — the backend plugin must be merged first; the frontend consumes:
 
 - `GET /typst/fonts`, `POST /typst/fonts`, `DELETE /typst/fonts/{name}`
+- `GET /typst/templates`, `POST /typst/templates`, `DELETE /typst/templates/{name}`
 - `GET /typst/examples`, `POST /typst/examples`, `DELETE /typst/examples/{name}`
-- `GET /typst/images`, `POST /typst/images`, `DELETE /typst/images/{id}`
+- `GET /typst/images`, `POST /typst/images`, `DELETE /typst/images/{name}`
+- `GET /api/v1/typst/sources[?principal_id=N&kind=…]`
+- `POST /api/v1/typst/sources[?principal_id=N]`
+- `GET/PUT/DELETE /api/v1/typst/sources/{id}[?principal_id=N]`
+- `POST /api/v1/typst/compile`
 
-The Playground tab gracefully degrades when `POST /typst/compile` is missing — that endpoint is a follow-up PR. Until it's shipped, the operator uses **Copy source** to drop the source into the chat composer for the agent to render via `typst_render`.
+Until then, the operator uses **Copy source** to drop the source into the chat composer for the agent to render via `typst_render`.
 
 ## Local development
 

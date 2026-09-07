@@ -32,8 +32,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { PlaygroundSourceKind, PlaygroundSourceSummary } from '../types'
-
-export type SourcesKindFilter = PlaygroundSourceKind | 'all'
+import type { SourcesKindFilter } from '../stores/sources'
 
 const props = defineProps<{
     open: boolean
@@ -220,6 +219,7 @@ function setSort(field: SortField): void {
         sortBy.value = field
         sortDir.value = 'desc'
     }
+    activeIdx.value = 0
 }
 
 function sortArrow(field: SortField): string {
