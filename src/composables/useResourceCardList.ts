@@ -14,6 +14,19 @@ export interface ResourceSummary {
 }
 
 /**
+ * Format a byte count for the card's `{{ formatBytes(size) }}` slot.
+ * Hoisted to module scope because it doesn't read any composable
+ * closure and re-creating on every `useResourceCardList()` call
+ * would just churn. The output tiers mirror the format used
+ * elsewhere in the admin SPA.
+ */
+function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`
+    return `${(n / (1024 * 1024)).toFixed(2)} MiB`
+}
+
+/**
  * Card-grid logic shared by the Templates and Examples panels.
  *
  * `openNames` mirrors the browser-native `<details>` state via the
@@ -43,12 +56,6 @@ export function useResourceCardList(kind: ResourceKind) {
     const highlightedByName = ref<Record<string, string>>({})
     const loadingName = ref<string | null>(null)
     const loadError = ref<string | null>(null)
-
-    function formatBytes(n: number): string {
-        if (n < 1024) return `${n} B`
-        if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`
-        return `${(n / (1024 * 1024)).toFixed(2)} MiB`
-    }
 
     function onToggle(name: string, event: Event): void {
         const target = event.target as HTMLDetailsElement
