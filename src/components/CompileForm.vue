@@ -239,6 +239,7 @@ function startNewSource(): void {
 function loadStarter(): void {
     source.value = STARTER
     filename.value = STARTER_NAME
+    currentSourceId.value = null
     currentSourceIsDirty.value = false
     result.value = null
     error.value = null

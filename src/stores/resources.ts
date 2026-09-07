@@ -79,9 +79,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         await Promise.all([loadFonts(), loadTemplates(), loadExamples()])
     }
 
-    // Re-fetch when the principal changes. `flush: 'post'` ensures
-    // the watcher fires after the chip row's store update lands, not
-    // mid-tick.
+    // Re-fetch when the principal changes.
     watch(principalId, async () => {
         if (fonts.value.length > 0 || templates.value.length > 0 || examples.value.length > 0) {
             await loadAll()

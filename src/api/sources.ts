@@ -26,7 +26,8 @@
  * allow-list with a 422.
  */
 import { getApi } from './client'
-import type { PlaygroundSource, PlaygroundSourceKind, PlaygroundSourceSummary } from '../types'
+import type { PlaygroundSource, PlaygroundSourceSummary } from '../types'
+import type { SourcesKindFilter } from '../stores/sources'
 
 function withPrincipal(path: string, principalId?: number | null): string {
     return principalId !== undefined && principalId !== null
@@ -34,7 +35,7 @@ function withPrincipal(path: string, principalId?: number | null): string {
         : path
 }
 
-function withKind(path: string, kind?: PlaygroundSourceKind | 'all' | null): string {
+function withKind(path: string, kind?: SourcesKindFilter | null): string {
     if (kind === undefined || kind === null || kind === 'all') {
         return path
     }
@@ -45,14 +46,14 @@ function withKind(path: string, kind?: PlaygroundSourceKind | 'all' | null): str
 function withPrincipalAndKind(
     path: string,
     principalId?: number | null,
-    kind?: PlaygroundSourceKind | 'all' | null,
+    kind?: SourcesKindFilter | null,
 ): string {
     return withKind(withPrincipal(path, principalId), kind)
 }
 
 export async function listSources(
     principalId?: number | null,
-    kind?: PlaygroundSourceKind | 'all' | null,
+    kind?: SourcesKindFilter | null,
 ): Promise<PlaygroundSourceSummary[]> {
     const api = getApi()
     const result = await api.get<{ sources: PlaygroundSourceSummary[] }>(

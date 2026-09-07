@@ -33,7 +33,7 @@ export default defineConfig({
             fileName: () => 'main.js',
         },
         rollupOptions: {
-            external: ['vue', 'pinia', 'vue-router', 'lucide-vue-next'],
+            external: ['vue', 'pinia', 'vue-router'],
             output: {
                 assetFileNames: (assetInfo) => {
                     if (assetInfo.name?.endsWith('.css')) {
