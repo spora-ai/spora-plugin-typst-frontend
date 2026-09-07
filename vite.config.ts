@@ -74,7 +74,7 @@ export default defineConfig({
             // excluded so the coverage number reflects real exercised
             // code rather than a denominator inflated by untested
             // components. Mirrors `sonar.coverage.exclusions`.
-            include: ['src/api/**/*.ts', 'src/stores/**/*.ts'],
+            include: ['src/api/**/*.ts', 'src/stores/**/*.ts', 'src/composables/**/*.ts'],
             exclude: ['src/main.ts', 'src/dev-main.ts', 'src/shims.d.ts', 'src/types.ts', 'src/**/*.{vue,css}'],
         },
     },
