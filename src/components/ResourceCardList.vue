@@ -49,6 +49,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     (e: 'edit', payload: EditEventPayload): void
     (e: 'render-example', payload: { name: string }): void
+    (e: 'open-in-editor', payload: { name: string; content: string; filename: string }): void
 }>()
 
 const store = useResourceStore()
@@ -136,6 +137,30 @@ async function onRenderExample(name: string): Promise<void> {
     if (content === undefined) return
     emit('render-example', { name })
     await renderExample(name, content)
+}
+
+/**
+ * Open the Editor tab with this example's source pre-filled. Used
+ * for the "Open in Editor" affordance on example cards — the parent
+ * (TypstPage) routes this through `useTabsStore().goToEditor()` so
+ * the Editor can consume the prefill on its next mount.
+ */
+async function onOpenInEditor(name: string): Promise<void> {
+    if (sourceByName.value[name] === undefined) {
+        await ensureSource(name)
+    }
+    const content = sourceByName.value[name]
+    if (content === undefined) return
+    // Strip the `.typ` extension; the Editor's filename field is
+    // a stem, not a full basename. The `-copy` suffix signals the
+    // new origin so the operator doesn't accidentally overwrite
+    // the original example on Save.
+    const stem = name.replace(/\.typ$/, '')
+    emit('open-in-editor', {
+        name,
+        content,
+        filename: `${stem}-copy.typ`,
+    })
 }
 </script>
 
@@ -232,6 +257,11 @@ async function onRenderExample(name: string): Promise<void> {
                             :disabled="renderingName === item.name"
                             @click="onRenderExample(item.name)"
                         >{{ renderingName === item.name ? 'Rendering…' : 'Render' }}</button>
+                        <button
+                            type="button"
+                            class="rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
+                            @click="onOpenInEditor(item.name)"
+                        >Open in Editor</button>
                     </div>
                     <div
                         v-if="props.kind === 'example' && renderError !== null"
@@ -340,6 +370,11 @@ async function onRenderExample(name: string): Promise<void> {
                                 :disabled="renderingName === item.name"
                                 @click="onRenderExample(item.name)"
                             >{{ renderingName === item.name ? 'Rendering…' : 'Render' }}</button>
+                            <button
+                                type="button"
+                                class="rounded border border-border bg-card px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
+                                @click="onOpenInEditor(item.name)"
+                            >Open in Editor</button>
                         </div>
                         <div
                             v-if="props.kind === 'example' && renderError !== null"

@@ -1,52 +1,55 @@
 <script setup lang="ts">
 /**
- * Playground: paste Typst source, click Render, see the result.
+ * Editor: paste Typst source, click Render, see the result. No DB
+ * writes on render — every render is ephemeral so iterating on a
+ * document doesn't fill the media archive with parent rows.
  *
- * Backend path: `POST /api/v1/typst/compile` (TypstCompileController
- * in the plugin) — same producer / derivative pipeline the agent's
- * `typst_render` tool uses, but called directly from the SPA for a
- * synchronous operator-facing render.
+ * Backend path: `POST /api/v1/typst/preview` (TypstPreviewController
+ * in the plugin) — same compile + render pipeline the agent's
+ * `typst_compile` tool uses, but called from the SPA for a
+ * synchronous operator-facing render. The preview returns base64
+ * bytes inline; we decode them to a Blob URL for the result panel.
  *
  * Render targets:
- *   - PDF  → `<iframe>` of the asset_url, with a first-page PNG
- *            preview alongside (the controller returns `preview_url`
- *            in the same response so we don't pay a second round-trip).
- *   - PNG  → `<img>` of the asset_url.
- *   - SVG  → `<img>` of the asset_url.
+ *   - PDF  → <iframe> of the Blob URL
+ *   - PNG  → <img> of the Blob URL (with PPI selector — only the
+ *            PNG format has raster density)
+ *   - SVG  → <img> of the Blob URL
  *
- * The result panel also exposes the canonical asset_url (the
- * `/api/v1/assets/<uuid>.<ext>` form) with a copy button. For PNG
- * outputs there's a second button that copies a `#image()` snippet
- * so the operator can drop the result straight back into Typst
- * source.
+ * The Editor is source-only — Save persists the source as a
+ * `media_assets` row tagged `tool_name='typst.playground'`, but it
+ * never creates a derivative. The LLM tool's `typst_compile` still
+ * uses `/compile` for production renders that need a persistent
+ * output row.
  *
- * The image picker pulls from two sources:
- *   - **Plugin images** (`/api/v1/typst/images/{name}`) — the
- *     principal's filesystem-backed library
- *   - **Media archive** (`/api/v1/assets/{uuid}.{ext}`) — images
- *     uploaded by any plugin/agent
- * Picking either inserts the right `#image("…")` URL at the cursor.
+ * Pickers:
+ *   - **Image picker** — inserts `#image("…")` at the cursor from
+ *     the plugin's image library or the media archive.
+ *   - **Template picker** — inserts `#import "templates/X.typ"` at
+ *     the cursor. Closes the loop on the file-not-found diagnostic
+ *     hint: operators no longer have to type the `templates/`
+ *     prefix manually.
  *
- * Files (the "Open" picker + Save):
- *   The source lives in `media_assets` rows tagged
- *   `tool_name='typst.playground'`, `mime_type='text/x-typst'`,
- *   `filename=<user-chosen>`. The compile endpoint upserts the
- *   parent row by `(principal_id, tool_name, filename)`, so a
- *   second compile of the same name overwrites the parent in
- *   place — the `source_id` is stable for the lifetime of the
- *   file. "Save" persists source edits without re-rendering and
- *   strips stale derivatives so the next render is fresh.
+ * Cross-tab prefill:
+ *   The Examples tab's "Open in Editor" button calls
+ *   `useTabsStore().goToEditor({ source, filename })`. The Editor
+ *   reads that prefill on mount via the tabs store and clears it
+ *   after consumption.
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ApiError } from '../api/client'
-import { compileTypst, imageSnippet } from '../api/compile'
+import { previewTypst, type PreviewResult } from '../api/preview'
 import { listImages } from '../api/images'
 import { listMediaArchiveImages } from '../api/media-archive'
 import { usePrincipalsStore } from '../stores/principals'
+import { useResourceStore } from '../stores/resources'
 import { useSourcesStore, type SourcesKindFilter } from '../stores/sources'
-import type { CompileResult, ImageResource, MediaArchiveImage, PlaygroundSourceSummary } from '../types'
+import { useTabsStore } from '../stores/tabs'
+import { DEFAULT_PPI, PPI_OPTIONS } from '../constants/ppi'
+import type { ImageResource, MediaArchiveImage, PlaygroundSourceSummary, TemplateResource } from '../types'
 import OpenPickerModal from './OpenPickerModal.vue'
 import SourceEditor from './SourceEditor.vue'
+import TemplateInsertionPicker from './TemplateInsertionPicker.vue'
 
 defineProps<{
     hostContext: import('../shims').PluginHostContext
@@ -77,22 +80,35 @@ This is rendered by ext-typst #v(0.5em) via the plugin.
 // Or reference a media-archive image (cross-plugin). The
 // /api/v1/assets/<uuid>.<ext> URL is what #image() consumes:
 // #image("/api/v1/assets/REPLACE-WITH-UUID.png", width: 80%)
+
+// Or import a template uploaded via the Templates tab:
+// #import "templates/foo.typ": bar
 `
 
-const STARTER_NAME = 'playground.typ'
+const STARTER_NAME = 'editor.typ'
 
 const source = ref('')
 const filename = ref('')
 const currentSourceId = ref<string | null>(null)
 const currentSourceIsDirty = ref(false)
 const format = ref<'pdf' | 'png' | 'svg'>('pdf')
+const ppi = ref<number>(DEFAULT_PPI)
 const busy = ref(false)
-const result = ref<CompileResult | null>(null)
+const result = ref<PreviewResult | null>(null)
+const resultBlobUrl = ref<string | null>(null)
 const error = ref<string | null>(null)
-const diagnostics = ref<string[] | null>(null)
+const diagnostics = ref<ParsedDiagnostic[] | null>(null)
+
+interface ParsedDiagnostic {
+    message: string
+    severity: 'error' | 'warning'
+    hint?: string
+}
 
 const principalsStore = usePrincipalsStore()
 const sourcesStore = useSourcesStore()
+const resourcesStore = useResourceStore()
+const tabsStore = useTabsStore()
 
 // Image picker state
 const pickerOpen = ref(false)
@@ -100,6 +116,10 @@ const pickerTab = ref<'plugin' | 'media'>('plugin')
 const pickerLoading = ref(false)
 const pluginImages = ref<ImageResource[]>([])
 const mediaImages = ref<MediaArchiveImage[]>([])
+// Template picker state
+const templatePickerOpen = ref(false)
+const templatePickerLoading = ref(false)
+const templates = ref<TemplateResource[]>([])
 // SourceEditor instance — exposes focus() + the underlying textarea
 // (cursor-aware insert after picking an image from the picker).
 const editorRef = ref<InstanceType<typeof SourceEditor> | null>(null)
@@ -122,9 +142,24 @@ async function loadPickerImages(): Promise<void> {
     }
 }
 
+async function loadTemplatePickerTemplates(): Promise<void> {
+    templatePickerLoading.value = true
+    try {
+        const principalId = principalsStore.selectedPrincipalId ?? undefined
+        templates.value = await resourcesStore.templates.length > 0
+            ? resourcesStore.templates
+            : await import('../api/templates').then((m) => m.listTemplates(principalId ?? undefined))
+    } catch {
+        templates.value = []
+    } finally {
+        templatePickerLoading.value = false
+    }
+}
+
 async function openImagePicker(): Promise<void> {
     pickerOpen.value = !pickerOpen.value
     openPickerOpen.value = false
+    templatePickerOpen.value = false
     if (pickerOpen.value) {
         await loadPickerImages()
     }
@@ -132,6 +167,19 @@ async function openImagePicker(): Promise<void> {
 
 function closeImagePicker(): void {
     pickerOpen.value = false
+}
+
+async function openTemplatePicker(): Promise<void> {
+    templatePickerOpen.value = !templatePickerOpen.value
+    openPickerOpen.value = false
+    pickerOpen.value = false
+    if (templatePickerOpen.value) {
+        await loadTemplatePickerTemplates()
+    }
+}
+
+function closeTemplatePicker(): void {
+    templatePickerOpen.value = false
 }
 
 function insertAtCursor(snippet: string): void {
@@ -161,9 +209,15 @@ function pickMediaImage(img: MediaArchiveImage): void {
     closeImagePicker()
 }
 
+function pickTemplate(payload: { name: string }): void {
+    insertAtCursor(`#import "templates/${payload.name}"\n`)
+    closeTemplatePicker()
+}
+
 async function openPicker(): Promise<void> {
     openPickerOpen.value = true
     pickerOpen.value = false
+    templatePickerOpen.value = false
     if (sourcesStore.sources.length === 0) {
         await sourcesStore.loadSources()
     }
@@ -189,6 +243,7 @@ async function pickExistingSource(summary: PlaygroundSourceSummary): Promise<voi
     currentSourceId.value = source_.id
     currentSourceIsDirty.value = false
     result.value = null
+    revokeResultBlob()
     error.value = null
     diagnostics.value = null
     closeOpenPicker()
@@ -205,6 +260,7 @@ function startNewSource(): void {
     currentSourceId.value = null
     currentSourceIsDirty.value = false
     result.value = null
+    revokeResultBlob()
     error.value = null
     diagnostics.value = null
 }
@@ -215,10 +271,33 @@ function loadStarter(): void {
     currentSourceId.value = null
     currentSourceIsDirty.value = false
     result.value = null
+    revokeResultBlob()
     error.value = null
     diagnostics.value = null
     // Focus the editor so the user can immediately start editing.
     requestAnimationFrame(() => editorRef.value?.focus())
+}
+
+/**
+ * Revoke any previously-allocated Blob objectURL so we don't leak
+ * memory on every render. Called whenever a new render starts or
+ * the buffer resets. Without this, every render adds a dangling
+ * Blob URL until the tab is closed.
+ */
+function revokeResultBlob(): void {
+    if (resultBlobUrl.value !== null) {
+        URL.revokeObjectURL(resultBlobUrl.value)
+        resultBlobUrl.value = null
+    }
+}
+
+function base64ToBlob(base64: string, mime: string): Blob {
+    const bytes = atob(base64)
+    const arr = new Uint8Array(bytes.length)
+    for (let i = 0; i < bytes.length; i++) {
+        arr[i] = bytes.charCodeAt(i)
+    }
+    return new Blob([arr], { type: mime })
 }
 
 async function saveCurrent(): Promise<void> {
@@ -233,6 +312,7 @@ async function saveCurrent(): Promise<void> {
             currentSourceId.value = created.id
             currentSourceIsDirty.value = false
             result.value = null
+            revokeResultBlob()
         } else {
             error.value = sourcesStore.error ?? 'Failed to save.'
         }
@@ -241,9 +321,8 @@ async function saveCurrent(): Promise<void> {
     const saved = await sourcesStore.saveSource(currentSourceId.value, source.value)
     if (saved !== null) {
         currentSourceIsDirty.value = false
-        // Stale derivatives for this source were just deleted server-side;
-        // drop the local result so the next render starts from a known state.
         result.value = null
+        revokeResultBlob()
     } else {
         error.value = sourcesStore.error ?? 'Failed to save.'
     }
@@ -256,19 +335,12 @@ async function deleteCurrent(): Promise<void> {
     try {
         await sourcesStore.removeSource(currentSourceId.value)
     } catch (e) {
-        // The store re-throws after setting its own error message.
-        // If the re-thrown value is an ApiError the store has
-        // already surfaced the server's structured reason; if it's
-        // a raw network error (the most common cause of "Failed to
-        // delete playground source." with no body) we fall through
-        // to a more descriptive message and log the raw error to
-        // the browser console for the operator.
         if (e instanceof ApiError) {
             error.value = e.message
         } else {
             const raw = e instanceof Error ? e.message : String(e)
             error.value = `Could not reach the server to delete the file (${raw}). Check the browser console for the full request log.`
-            console.error('typst playground: delete failed', e)
+            console.error('typst editor: delete failed', e)
         }
         return
     }
@@ -279,16 +351,18 @@ async function render(): Promise<void> {
     busy.value = true
     error.value = null
     diagnostics.value = null
+    revokeResultBlob()
     result.value = null
     try {
-        const compiled = await compileTypst({
+        const preview = await previewTypst({
             source: source.value,
             name: filename.value,
             format: format.value,
+            ppi: format.value === 'png' ? ppi.value : undefined,
         })
-        result.value = compiled
-        currentSourceId.value = compiled.source_id
-        currentSourceIsDirty.value = false
+        result.value = preview
+        const blob = base64ToBlob(preview.bytes, preview.mime)
+        resultBlobUrl.value = URL.createObjectURL(blob)
     } catch (e) {
         if (e instanceof ApiError && e.code === 'COMPILATION_FAILED') {
             const parsed = parseDiagnostics(e.message)
@@ -302,67 +376,56 @@ async function render(): Promise<void> {
     }
 }
 
-async function copyToClipboard(text: string): Promise<boolean> {
-    try {
-        await navigator.clipboard.writeText(text)
-        return true
-    } catch {
-        const textarea = document.createElement('textarea')
-        textarea.value = text
-        textarea.style.position = 'fixed'
-        textarea.style.opacity = '0'
-        document.body.appendChild(textarea)
-        textarea.select()
-        try {
-            return document.execCommand('copy')
-        } catch {
-            return false
-        } finally {
-            textarea.remove()
-        }
-    }
-}
-
-async function copyImageSnippet(): Promise<void> {
-    if (!result.value || result.value.format !== 'png') return
-    await copyToClipboard(imageSnippet(result.value.asset_url))
-}
-
-async function copyAssetUrl(): Promise<void> {
-    if (!result.value) return
-    await copyToClipboard(result.value.asset_url)
-}
-
 /**
  * Parse the controller's COMPILATION_FAILED message. The envelope is
- * `{ error: { code, message, diagnostics: [{ message }] } }`. The
- * client surfaces only `error.message`, so the structured diagnostics
- * come back as a JSON blob inside it — parse it back out so the UI
- * can render the same list the controller returns.
+ * `{ error: { code, message, diagnostics: [{ message, severity, hint? }] } }`.
+ * The client surfaces only `error.message` (the entire JSON blob as a
+ * string), so we parse it back out into a typed structure the result
+ * panel can render with severity-aware styling and hint callouts.
+ *
+ * Falls back to a single error entry when the message isn't a parseable
+ * envelope — the operator still sees SOMETHING rather than an empty
+ * diagnostics panel.
  */
-function parseDiagnostics(message: string): string[] {
+function parseDiagnostics(message: string): ParsedDiagnostic[] {
     try {
-        const obj = JSON.parse(message) as { diagnostics?: Array<{ message?: string }> }
+        const obj = JSON.parse(message) as {
+            diagnostics?: Array<{ message?: string; severity?: string; hint?: string }>
+        }
         if (Array.isArray(obj.diagnostics)) {
-            return obj.diagnostics.map((d) => d.message ?? '').filter((s) => s !== '')
+            const out: ParsedDiagnostic[] = []
+            for (const d of obj.diagnostics) {
+                const msg = d.message ?? ''
+                if (msg === '') continue
+                const severity = d.severity === 'warning' ? 'warning' : 'error'
+                const entry: ParsedDiagnostic = { message: msg, severity }
+                if (typeof d.hint === 'string' && d.hint !== '') {
+                    entry.hint = d.hint
+                }
+                out.push(entry)
+            }
+            return out
         }
     } catch {
         // not JSON — fall through
     }
-    return [message]
+    return [{ message, severity: 'error' }]
 }
 
-function isPngOutput(r: CompileResult | null): boolean {
-    return r?.format === 'png'
+function downloadRender(): void {
+    const r = result.value
+    const url = resultBlobUrl.value
+    if (r === null || url === null) return
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${r.source_name.replace(/\.typ$/, '')}.${r.format}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
 }
 
 const hasOpenFile = computed(() => currentSourceId.value !== null)
 
-// True when the buffer has edits that aren't reflected in a saved
-// row. Covers both cases:
-//   - new file (no id): any non-empty source or non-empty filename
-//   - existing file (id set): the editor's "dirty" flag is on
-// Drives the "Unsaved" badge next to the filename input.
 const hasUnsavedChanges = computed<boolean>(() => {
     if (currentSourceId.value === null) {
         return source.value.trim() !== '' || filename.value.trim() !== ''
@@ -376,7 +439,7 @@ watch(source, () => {
         currentSourceIsDirty.value = true
     }
 })
-// Filename change also marks dirty: if the user renames a file
+// Filename change also marks dirty: if the operator renames a file
 // without compiling, the local source_id still points at the old
 // name and the save would overwrite the wrong row.
 watch(filename, () => {
@@ -387,11 +450,24 @@ watch(filename, () => {
 
 onMounted(() => {
     // Eagerly fetch the image picker so the first click is snappy.
-    // The picker only opens on user click; this is just a prefetch.
     loadPickerImages().catch(() => { /* ignored — picker re-fetches on open */ })
-    // Eagerly fetch the open-picker too so the dropdown has content
-    // even on the first click. Filename-based "Open" is the new flow.
     sourcesStore.loadSources().catch(() => { /* ignored — picker re-fetches on open */ })
+    resourcesStore.loadTemplates().catch(() => { /* ignored — picker re-fetches on open */ })
+
+    // Cross-tab prefill: when an Example card opens the Editor via
+    // the tabs store, consume the prefill here. Cleared after
+    // consumption so a tab switch back to the Editor doesn't
+    // re-populate the buffer.
+    const prefill = tabsStore.editorPrefill
+    if (prefill !== null) {
+        if (prefill.source !== '') {
+            source.value = prefill.source
+        }
+        if (prefill.filename !== '') {
+            filename.value = prefill.filename
+        }
+        tabsStore.clearEditorPrefill()
+    }
 })
 </script>
 
@@ -419,7 +495,7 @@ onMounted(() => {
                     </span>
                 </div>
                 <span class="text-xs text-muted-foreground">
-                    Compiled by <code class="font-mono">POST /api/v1/typst/compile</code>
+                    Rendered by <code class="font-mono">POST /api/v1/typst/preview</code> — no DB writes
                 </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
@@ -427,7 +503,7 @@ onMounted(() => {
                     id="typst-filename"
                     v-model="filename"
                     type="text"
-                    placeholder="playground.typ"
+                    placeholder="editor.typ"
                     class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm font-mono focus:border-ring focus:ring-1 focus:ring-ring outline-none"
                     spellcheck="false"
                     autocomplete="off"
@@ -461,7 +537,7 @@ onMounted(() => {
                     type="button"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
                     :disabled="sourcesStore.saving"
-                    :title="hasOpenFile ? 'Persist source edits without re-rendering' : 'Save the current buffer as a new playground file'"
+                    :title="hasOpenFile ? 'Persist source edits without re-rendering' : 'Save the current buffer as a new editor file'"
                     @click="saveCurrent"
                 >
                     {{ sourcesStore.saving ? 'Saving…' : 'Save' }}
@@ -494,7 +570,7 @@ onMounted(() => {
                     class="absolute inset-0 flex items-center justify-center pointer-events-none"
                 >
                     <div class="pointer-events-auto flex flex-col items-center gap-2 px-4 py-3 rounded-md border border-border bg-card/95 shadow-sm">
-                        <p class="text-xs text-muted-foreground text-center">Empty playground buffer.</p>
+                        <p class="text-xs text-muted-foreground text-center">Empty editor buffer.</p>
                         <button
                             type="button"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted"
@@ -512,22 +588,37 @@ onMounted(() => {
                 </div>
             </div>
             <div class="flex items-center justify-between gap-3 flex-wrap">
-                <fieldset class="flex items-center gap-3 text-sm">
-                    <legend class="sr-only">Format</legend>
+                <div class="flex items-center gap-3 flex-wrap text-sm">
+                    <fieldset class="flex items-center gap-3">
+                        <legend class="sr-only">Format</legend>
+                        <label
+                            v-for="opt in (['pdf', 'png', 'svg'] as const)"
+                            :key="opt"
+                            class="inline-flex items-center gap-1.5"
+                        >
+                            <input
+                                type="radio"
+                                :value="opt"
+                                v-model="format"
+                                class="text-primary focus:ring-ring"
+                            />
+                            <span class="uppercase text-xs font-medium">{{ opt }}</span>
+                        </label>
+                    </fieldset>
                     <label
-                        v-for="opt in (['pdf', 'png', 'svg'] as const)"
-                        :key="opt"
+                        v-if="format === 'png'"
                         class="inline-flex items-center gap-1.5"
                     >
-                        <input
-                            type="radio"
-                            :value="opt"
-                            v-model="format"
-                            class="text-primary focus:ring-ring"
-                        />
-                        <span class="uppercase text-xs font-medium">{{ opt }}</span>
+                        <span class="text-xs text-muted-foreground">PPI</span>
+                        <select
+                            v-model.number="ppi"
+                            class="px-2 py-1 rounded-md border border-input bg-background text-foreground text-xs font-mono focus:border-ring focus:ring-1 focus:ring-ring outline-none"
+                            aria-label="Raster resolution (PPI)"
+                        >
+                            <option v-for="opt in PPI_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                        </select>
                     </label>
-                </fieldset>
+                </div>
                 <div class="flex items-center gap-2">
                     <button
                         type="button"
@@ -536,11 +627,25 @@ onMounted(() => {
                         @click="openImagePicker"
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <rect x="3" height="18" width="18" rx="2" ry="2" />
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <polyline points="21 15 16 10 5 21" />
                         </svg>
                         Insert image
+                    </button>
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
+                        :disabled="busy"
+                        @click="openTemplatePicker"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="9" y1="13" x2="13" y2="13" />
+                            <line x1="11" y1="17" x2="15" y2="17" />
+                        </svg>
+                        Insert template
                     </button>
                     <button
                         type="button"
@@ -613,6 +718,13 @@ onMounted(() => {
                     </button>
                 </div>
             </div>
+            <TemplateInsertionPicker
+                :open="templatePickerOpen"
+                :templates="templates"
+                :loading="templatePickerLoading"
+                @close="closeTemplatePicker"
+                @insert="pickTemplate"
+            />
         </div>
 
         <OpenPickerModal
@@ -628,56 +740,72 @@ onMounted(() => {
 
         <div
             v-if="error"
-            class="rounded-md px-4 py-3 text-sm bg-destructive/10 text-destructive border border-destructive/30"
+            class="rounded-md px-4 py-3 text-sm bg-destructive/10 text-destructive border border-destructive/30 space-y-2"
         >
             <div class="font-medium">{{ error }}</div>
-            <ul v-if="diagnostics && diagnostics.length > 0" class="mt-2 list-disc list-inside space-y-1 font-mono text-xs">
-                <li v-for="(line, idx) in diagnostics" :key="idx">{{ line }}</li>
+            <ul v-if="diagnostics && diagnostics.length > 0" class="space-y-2 font-mono text-xs">
+                <li
+                    v-for="(d, idx) in diagnostics"
+                    :key="idx"
+                    :class="[
+                        'rounded-md border px-3 py-2',
+                        d.severity === 'warning'
+                            ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                            : 'border-destructive/40 bg-destructive/10 text-destructive',
+                    ]"
+                >
+                    <div class="flex items-baseline gap-2">
+                        <span
+                            class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded"
+                            :class="d.severity === 'warning' ? 'bg-amber-500/20' : 'bg-destructive/20'"
+                        >{{ d.severity }}</span>
+                        <span>{{ d.message }}</span>
+                    </div>
+                    <div
+                        v-if="d.hint"
+                        class="mt-1.5 pl-1 border-l-2 border-current/30 text-foreground/80"
+                    >
+                        <span class="text-[10px] uppercase tracking-wide opacity-70">Hint</span>
+                        <span class="ml-2">{{ d.hint }}</span>
+                    </div>
+                </li>
             </ul>
         </div>
 
-        <div v-if="result" class="rounded-lg border border-border bg-card p-4 space-y-3">
-            <div class="text-sm text-foreground">
-                Rendered <code class="font-mono">{{ result.format }}</code>
-                · <span class="tabular-nums">{{ result.size }}</span> bytes
-                <span v-if="result.width && result.height">
-                    · {{ result.width }}×{{ result.height }}px
+        <div v-if="result && resultBlobUrl" class="rounded-lg border border-border bg-card p-4 space-y-3">
+            <div class="text-sm text-foreground flex items-baseline justify-between flex-wrap gap-2">
+                <div>
+                    Rendered <code class="font-mono">{{ result.format }}</code>
+                    <span v-if="result.width !== null && result.height !== null">
+                        · {{ result.width }}×{{ result.height }}px
+                    </span>
+                    <span v-if="format === 'png'" class="text-muted-foreground">
+                        · {{ ppi }} PPI
+                    </span>
+                </div>
+                <span class="text-xs text-muted-foreground">
+                    Ephemeral — nothing saved
                 </span>
             </div>
-            <div class="text-xs text-muted-foreground truncate flex items-center gap-3 flex-wrap">
-                <a
-                    :href="result.asset_url"
-                    target="_blank"
-                    rel="noopener"
-                    class="text-primary hover:text-primary/80 underline font-mono"
-                >{{ result.asset_url }}</a>
+            <div class="flex items-center gap-2 flex-wrap">
                 <button
                     type="button"
                     class="text-xs font-medium text-muted-foreground hover:text-foreground"
-                    @click="copyAssetUrl"
-                >Copy URL</button>
-                <button
-                    v-if="isPngOutput(result)"
-                    type="button"
-                    class="text-xs font-medium text-primary hover:text-primary/80"
-                    @click="copyImageSnippet"
-                >Copy as <code class="font-mono">#image()</code></button>
+                    @click="downloadRender"
+                >Download</button>
+                <span class="text-xs text-muted-foreground">
+                    Re-render after Save to refresh.
+                </span>
             </div>
-            <div v-if="result.format === 'pdf'" class="space-y-3">
-                <div class="bg-muted rounded p-2">
-                    <iframe
-                        :src="result.asset_url"
-                        title="Typst PDF render"
-                        class="w-full h-96 border border-border rounded"
-                    />
-                </div>
-                <div v-if="result.preview_url" class="bg-muted rounded p-2">
-                    <p class="text-xs text-muted-foreground mb-1">First-page preview (PNG)</p>
-                    <img :src="result.preview_url" :alt="`Typst render ${result.format} preview`" class="max-w-full h-auto mx-auto" />
-                </div>
+            <div v-if="result.format === 'pdf'">
+                <iframe
+                    :src="resultBlobUrl"
+                    title="Typst PDF render"
+                    class="w-full h-96 border border-border rounded"
+                />
             </div>
             <div v-else-if="result.mime.startsWith('image/')">
-                <img :src="result.asset_url" :alt="`Typst render ${result.format}`" class="max-w-full h-auto mx-auto" />
+                <img :src="resultBlobUrl" :alt="`Typst render ${result.format}`" class="max-w-full h-auto mx-auto" />
             </div>
         </div>
     </div>
