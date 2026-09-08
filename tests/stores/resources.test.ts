@@ -207,4 +207,216 @@ describe('stores/resources', () => {
         await store.removeExample('Y.typ')
         expect(store.examples).toHaveLength(0)
     })
+
+    it('updateTemplate PUTs the new content and replaces the row in place', async () => {
+        let putPath = ''
+        let putBody: unknown = null
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({
+                templates: [{ name: 'Letter.typ', kind: 'template', origin: 'principal', size: 100, modified_at: 1 }],
+            } as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(path: string, body: unknown): Promise<T> => {
+                putPath = path
+                putBody = body
+                return Promise.resolve({
+                    template: { name: 'Letter.typ', kind: 'template', origin: 'principal', size: 200, modified_at: 999 },
+                } as T)
+            },
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const store = useResourceStore()
+        await store.loadTemplates()
+        const before = store.templates[0]
+        expect(before?.size).toBe(100)
+        expect(before?.modified_at).toBe(1)
+
+        const updated = await store.updateTemplate('Letter.typ', '= New content')
+        expect(updated).not.toBeNull()
+        expect(putPath).toBe('/typst/templates/Letter.typ')
+        expect(putBody).toEqual({ content: '= New content' })
+
+        // The in-memory row reflects the new size + mtime, no
+        // second row appended.
+        expect(store.templates).toHaveLength(1)
+        const after = store.templates[0]
+        expect(after?.size).toBe(200)
+        expect(after?.modified_at).toBe(999)
+    })
+
+    it('updateTemplate prepends the row when it was not already in the listing', async () => {
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({ templates: [] } as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({
+                template: { name: 'New.typ', kind: 'template', origin: 'principal', size: 50, modified_at: 7 },
+            } as T),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const store = useResourceStore()
+        await store.loadTemplates()
+        expect(store.templates).toHaveLength(0)
+
+        await store.updateTemplate('New.typ', '= Hi')
+        expect(store.templates).toHaveLength(1)
+        expect(store.templates[0]?.name).toBe('New.typ')
+    })
+
+    it('updateTemplate returns null and surfaces error on a 422', async () => {
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({
+                templates: [{ name: 'Letter.typ', kind: 'template', origin: 'principal', size: 100, modified_at: 1 }],
+            } as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.reject(
+                new ApiError('Invalid template basename: ../etc.typ', 'INVALID_BASENAME', 422),
+            ),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const store = useResourceStore()
+        await store.loadTemplates()
+        const result = await store.updateTemplate('../etc.typ', 'x')
+        expect(result).toBeNull()
+        expect(store.error).toBe('Invalid template basename: ../etc.typ')
+        // Original row untouched.
+        expect(store.templates).toHaveLength(1)
+        expect(store.templates[0]?.size).toBe(100)
+    })
+
+    it('updateExample PUTs the new content and replaces the row in place', async () => {
+        let putPath = ''
+        let putBody: unknown = null
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({
+                examples: [{ name: 'tables.typ', kind: 'example', origin: 'principal', size: 240, modified_at: 1 }],
+            } as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(path: string, body: unknown): Promise<T> => {
+                putPath = path
+                putBody = body
+                return Promise.resolve({
+                    example: { name: 'tables.typ', kind: 'example', origin: 'principal', size: 480, modified_at: 999 },
+                } as T)
+            },
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const store = useResourceStore()
+        await store.loadExamples()
+        const before = store.examples[0]
+        expect(before?.size).toBe(240)
+
+        const updated = await store.updateExample('tables.typ', '#table(...)\n#pagebreak()\n#table(...)')
+        expect(updated).not.toBeNull()
+        expect(putPath).toBe('/typst/examples/tables.typ')
+        expect(putBody).toEqual({ content: '#table(...)\n#pagebreak()\n#table(...)' })
+
+        expect(store.examples).toHaveLength(1)
+        const after = store.examples[0]
+        expect(after?.size).toBe(480)
+        expect(after?.modified_at).toBe(999)
+    })
+
+    it('updateExample returns null and surfaces error on a 422', async () => {
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({ examples: [] } as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.reject(
+                new ApiError('Invalid example basename: ../etc.typ', 'INVALID_BASENAME', 422),
+            ),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const store = useResourceStore()
+        const result = await store.updateExample('../etc.typ', 'x')
+        expect(result).toBeNull()
+        expect(store.error).toBe('Invalid example basename: ../etc.typ')
+    })
+
+    it('renderExample POSTs the source + name to /typst/preview and returns the result', async () => {
+        let postedPath = ''
+        let postedBody: unknown = null
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(path: string, body: unknown): Promise<T> => {
+                postedPath = path
+                postedBody = body
+                return Promise.resolve({
+                    bytes: 'aGVsbG8=',
+                    mime: 'image/png',
+                    format: 'png',
+                    source_name: 'tables.typ',
+                    width: 320,
+                    height: 200,
+                } as T)
+            },
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const store = useResourceStore()
+        const result = await store.renderExample('tables.typ', '#table(...)')
+        expect(result).not.toBeNull()
+        expect(result?.format).toBe('png')
+        expect(result?.mime).toBe('image/png')
+        expect(result?.source_name).toBe('tables.typ')
+        expect(postedPath).toBe('/typst/preview')
+        // Default format is png — the inline thumbnail shape.
+        expect((postedBody as { format: string }).format).toBe('png')
+        expect((postedBody as { source: string }).source).toBe('#table(...)')
+        expect((postedBody as { name: string }).name).toBe('tables.typ')
+        expect(store.error).toBeNull()
+    })
+
+    it('renderExample forwards format + ppi overrides', async () => {
+        let postedBody: unknown = null
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(_path: string, body: unknown): Promise<T> => {
+                postedBody = body
+                return Promise.resolve({
+                    bytes: '',
+                    mime: 'image/png',
+                    format: 'png',
+                    source_name: 'tables.typ',
+                    width: 800,
+                    height: 600,
+                } as T)
+            },
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const store = useResourceStore()
+        await store.renderExample('tables.typ', '#table(...)', 'png', 200)
+        expect((postedBody as { format: string }).format).toBe('png')
+        expect((postedBody as { ppi: number }).ppi).toBe(200)
+    })
+
+    it('renderExample surfaces ApiError messages and returns null', async () => {
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.reject(
+                new ApiError('Compilation failed: unknown variable', 'COMPILATION_FAILED', 422),
+            ),
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const store = useResourceStore()
+        const result = await store.renderExample('broken.typ', '#bad()')
+        expect(result).toBeNull()
+        expect(store.error).toBe('Compilation failed: unknown variable')
+    })
 })

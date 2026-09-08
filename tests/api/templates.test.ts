@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setApi, ApiError } from '../../src/api/client'
-import { getTemplate, listTemplates, uploadTemplate, deleteTemplate } from '../../src/api/templates'
+import { getTemplate, listTemplates, uploadTemplate, updateTemplate, deleteTemplate } from '../../src/api/templates'
 import type { PluginHostContext } from '../../src/shims'
 
 /**
@@ -195,5 +195,66 @@ describe('api/templates', () => {
 
         await deleteTemplate('letter.typ')
         expect(deletedPath).toBe('/typst/templates/letter.typ')
+    })
+
+    it('updateTemplate PUTs the new content and unwraps the envelope', async () => {
+        let putPath = ''
+        let putBody: unknown = null
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(path: string, body: unknown): Promise<T> => {
+                putPath = path
+                putBody = body
+                return Promise.resolve({
+                    template: { name: 'Letter.typ', kind: 'template', origin: 'principal', size: 99, modified_at: 1234 },
+                } as T)
+            },
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        const t = await updateTemplate('Letter.typ', '= New content')
+        expect(putPath).toBe('/typst/templates/Letter.typ')
+        expect(putBody).toEqual({ content: '= New content' })
+        expect(t.name).toBe('Letter.typ')
+        expect(t.size).toBe(99)
+        expect(t.modified_at).toBe(1234)
+    })
+
+    it('updateTemplate URL-encodes the basename on the PUT path', async () => {
+        let putPath = ''
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(path: string, _body: unknown): Promise<T> => {
+                putPath = path
+                return Promise.resolve({
+                    template: { name: 'Invoice Q1 2026.typ', kind: 'template', origin: 'principal', size: 1, modified_at: 1 },
+                } as T)
+            },
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        await updateTemplate('Invoice Q1 2026.typ', '= Hi')
+        expect(putPath).toBe('/typst/templates/Invoice%20Q1%202026.typ')
+    })
+
+    it('updateTemplate propagates a 422 ApiError for an invalid basename', async () => {
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.reject(
+                new ApiError('Invalid template basename: ../etc.typ', 'INVALID_BASENAME', 422),
+            ),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+
+        await expect(updateTemplate('../etc.typ', 'x')).rejects.toMatchObject({
+            code: 'INVALID_BASENAME',
+            status: 422,
+        })
     })
 })

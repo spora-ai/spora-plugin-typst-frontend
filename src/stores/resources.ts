@@ -21,7 +21,29 @@ import { ApiError } from '../api/client'
 import * as fontsApi from '../api/fonts'
 import * as templatesApi from '../api/templates'
 import * as examplesApi from '../api/examples'
+import * as previewApi from '../api/preview'
 import type { FontResource, TemplateResource, ExampleResource } from '../types'
+
+/**
+ * Inline render result for the example-card "render preview"
+ * action. Shape mirrors {@see ../api/preview.PreviewResult} but
+ * inlined here so the store doesn't leak the API client's internal
+ * type names into component imports.
+ */
+export interface RenderExampleResult {
+    /** Base64-encoded bytes of the rendered file (PDF / PNG / SVG). */
+    bytes: string
+    /** MIME type — `application/pdf`, `image/png`, or `image/svg+xml`. */
+    mime: string
+    /** Format label — `pdf`, `png`, or `svg`. */
+    format: 'pdf' | 'png' | 'svg'
+    /** Echoed back so the result panel can show the source's filename. */
+    source_name: string
+    /** Pixel width for PNG; null for PDF/SVG. */
+    width: number | null
+    /** Pixel height for PNG; null for PDF/SVG. */
+    height: number | null
+}
 
 export const useResourceStore = defineStore('typst-resources', () => {
     const fonts = ref<FontResource[]>([])
@@ -131,6 +153,75 @@ export const useResourceStore = defineStore('typst-resources', () => {
         }
     }
 
+    async function updateTemplate(name: string, content: string): Promise<TemplateResource | null> {
+        uploading.value = true
+        error.value = null
+        try {
+            const updated = await templatesApi.updateTemplate(name, content)
+            // Replace the row in place so the size / mtime on the
+            // card reflects the new bytes without a full reload.
+            const idx = templates.value.findIndex((t) => t.name === name)
+            if (idx >= 0) {
+                templates.value[idx] = updated
+            } else {
+                templates.value.push(updated)
+            }
+            return updated
+        } catch (e) {
+            error.value = e instanceof ApiError ? e.message : 'Failed to update template.'
+            return null
+        } finally {
+            uploading.value = false
+        }
+    }
+
+    async function updateExample(name: string, content: string): Promise<ExampleResource | null> {
+        uploading.value = true
+        error.value = null
+        try {
+            const updated = await examplesApi.updateExample(name, content)
+            // Replace the row in place so the size / mtime on the
+            // card reflects the new bytes without a full reload.
+            const idx = examples.value.findIndex((ex) => ex.name === name)
+            if (idx >= 0) {
+                examples.value[idx] = updated
+            } else {
+                examples.value.push(updated)
+            }
+            return updated
+        } catch (e) {
+            error.value = e instanceof ApiError ? e.message : 'Failed to update example.'
+            return null
+        } finally {
+            uploading.value = false
+        }
+    }
+
+    /**
+     * Render a thumbnail for an example card without touching the
+     * media archive. Bridges to `POST /typst/preview`, which is the
+     * ephemeral path — bytes come back inline as base64 and no
+     * `media_assets` / `media_derivatives` rows are written.
+     *
+     * Defaults to `png` at 144 PPI so the inline thumb is the same
+     * shape across cards; callers can override for a sharper
+     * preview when needed.
+     */
+    async function renderExample(
+        name: string,
+        content: string,
+        format: 'pdf' | 'png' | 'svg' = 'png',
+        ppi?: number,
+    ): Promise<RenderExampleResult | null> {
+        error.value = null
+        try {
+            return await previewApi.previewTypst({ source: content, name, format, ppi })
+        } catch (e) {
+            error.value = e instanceof ApiError ? e.message : 'Failed to render example preview.'
+            return null
+        }
+    }
+
     async function removeFont(name: string): Promise<void> {
         uploading.value = true
         error.value = null
@@ -193,6 +284,9 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploadFont,
         uploadTemplate,
         uploadExample,
+        updateTemplate,
+        updateExample,
+        renderExample,
         removeFont,
         removeTemplate,
         removeExample,
