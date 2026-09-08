@@ -42,11 +42,11 @@ import { ApiError } from '../api/client'
 import { compileTypst, imageSnippet } from '../api/compile'
 import { listImages } from '../api/images'
 import { listMediaArchiveImages } from '../api/media-archive'
-import { highlightTypst } from 'highlightjs-typst/highlight'
 import { usePrincipalsStore } from '../stores/principals'
 import { useSourcesStore, type SourcesKindFilter } from '../stores/sources'
 import type { CompileResult, ImageResource, MediaArchiveImage, PlaygroundSourceSummary } from '../types'
 import OpenPickerModal from './OpenPickerModal.vue'
+import SourceEditor from './SourceEditor.vue'
 
 defineProps<{
     hostContext: import('../shims').PluginHostContext
@@ -100,22 +100,9 @@ const pickerTab = ref<'plugin' | 'media'>('plugin')
 const pickerLoading = ref(false)
 const pluginImages = ref<ImageResource[]>([])
 const mediaImages = ref<MediaArchiveImage[]>([])
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
-const highlightRef = ref<HTMLPreElement | null>(null)
-
-/**
- * Typst source, syntax-highlighted for the editor overlay. The
- * editor is a transparent `<textarea>` stacked on top of a
- * `<pre>` containing this HTML; both share font + padding +
- * line-height so the highlighted glyphs line up under the
- * caret. hljs escapes its output, so `v-html` is XSS-safe.
- *
- * Trailing newline: hljs strips a final newline, which makes
- * the last line shorter than the textarea's last line. We
- * always append `\n` so the caret on an empty last line still
- * lines up.
- */
-const highlightedSource = computed(() => highlightTypst(source.value) + '\n')
+// SourceEditor instance — exposes focus() + the underlying textarea
+// (cursor-aware insert after picking an image from the picker).
+const editorRef = ref<InstanceType<typeof SourceEditor> | null>(null)
 
 // Open picker (existing files)
 const openPickerOpen = ref(false)
@@ -148,8 +135,8 @@ function closeImagePicker(): void {
 }
 
 function insertAtCursor(snippet: string): void {
-    const ta = textareaRef.value
-    if (!ta) {
+    const ta = editorRef.value?.textarea ?? null
+    if (ta === null) {
         // Fallback: append to end
         source.value = source.value + '\n' + snippet + '\n'
         return
@@ -162,20 +149,6 @@ function insertAtCursor(snippet: string): void {
         ta.focus()
         ta.setSelectionRange(start + snippet.length, start + snippet.length)
     })
-}
-
-/**
- * Mirror the textarea's scroll position onto the highlighted
- * `<pre>` so they stay in lockstep. Both elements share the
- * same width and the `<pre>` is `pointer-events: none` so it
- * only scrolls via this handler.
- */
-function onEditorScroll(): void {
-    const ta = textareaRef.value
-    const pre = highlightRef.value
-    if (ta === null || pre === null) return
-    pre.scrollTop = ta.scrollTop
-    pre.scrollLeft = ta.scrollLeft
 }
 
 function pickPluginImage(img: ImageResource): void {
@@ -245,7 +218,7 @@ function loadStarter(): void {
     error.value = null
     diagnostics.value = null
     // Focus the editor so the user can immediately start editing.
-    requestAnimationFrame(() => textareaRef.value?.focus())
+    requestAnimationFrame(() => editorRef.value?.focus())
 }
 
 async function saveCurrent(): Promise<void> {
@@ -508,25 +481,14 @@ onMounted(() => {
             </div>
 
             <label for="typst-source" class="block text-sm font-medium text-foreground pt-2">Typst source</label>
-            <div class="typst-editor rounded-md border border-input bg-background focus-within:border-ring focus-within:ring-1 focus:ring-ring">
-                <pre
-                    ref="highlightRef"
-                    class="typst-editor__highlight"
-                    aria-hidden="true"
-                ><code class="hljs language-typst" v-html="highlightedSource"></code></pre>
-                <textarea
-                    id="typst-source"
-                    ref="textareaRef"
+            <div class="relative">
+                <SourceEditor
+                    ref="editorRef"
                     v-model="source"
-                    rows="18"
-                    class="typst-editor__textarea"
-                    spellcheck="false"
-                    autocomplete="off"
-                    autocorrect="off"
-                    autocapitalize="off"
+                    :rows="18"
                     placeholder="Type Typst markup, or click ‘Load example’ to start from a template…"
-                    @scroll="onEditorScroll"
-                ></textarea>
+                    aria-label="Typst source"
+                />
                 <div
                     v-if="source === '' && filename === '' && !result"
                     class="absolute inset-0 flex items-center justify-center pointer-events-none"
@@ -539,7 +501,7 @@ onMounted(() => {
                             @click="loadStarter"
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <path d="M14 2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                 <polyline points="14 2 14 8 20 8" />
                                 <line x1="9" y1="13" x2="15" y2="13" />
                                 <line x1="9" y1="17" x2="13" y2="17" />
