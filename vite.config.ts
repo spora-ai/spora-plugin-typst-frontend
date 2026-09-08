@@ -35,6 +35,14 @@ export default defineConfig({
         rollupOptions: {
             external: ['vue', 'pinia', 'vue-router'],
             output: {
+                // `window.<external>` substitution avoids ReferenceErrors —
+                // bare identifiers aren't free variables in module scope.
+                // Host publishes the globals first.
+                globals: {
+                    vue: 'window.Vue',
+                    pinia: 'window.Pinia',
+                    'vue-router': 'window.VueRouter',
+                },
                 assetFileNames: (assetInfo) => {
                     if (assetInfo.name?.endsWith('.css')) {
                         return 'style.css'
