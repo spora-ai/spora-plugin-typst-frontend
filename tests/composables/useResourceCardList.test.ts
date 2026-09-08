@@ -367,3 +367,143 @@ describe('useResourceCardList — onMounted auto-load', () => {
         expect(loadSpy).not.toHaveBeenCalled()
     })
 })
+
+describe('useResourceCardList — edit affordance', () => {
+    it('starts with editingName=null', () => {
+        const c = useResourceCardList('template')
+        expect(c.editingName.value).toBeNull()
+    })
+
+    it('startEdit(name) sets editingName.value', () => {
+        const c = useResourceCardList('template')
+        c.startEdit('a.typ')
+        expect(c.editingName.value).toBe('a.typ')
+    })
+
+    it('startEdit replaces the previous editingName', () => {
+        const c = useResourceCardList('template')
+        c.startEdit('a.typ')
+        c.startEdit('b.typ')
+        expect(c.editingName.value).toBe('b.typ')
+    })
+
+    it('cancelEdit() clears editingName.value', () => {
+        const c = useResourceCardList('template')
+        c.startEdit('a.typ')
+        c.cancelEdit()
+        expect(c.editingName.value).toBeNull()
+    })
+})
+
+describe('useResourceCardList — example render', () => {
+    // The store's `renderExample` bridge is added in a separate
+    // commit; the tests patch it onto the store directly so the
+    // composable's cast-based access resolves to a controlled
+    // stub. The composable decodes the base64 payload into a Blob
+    // and stores the resulting objectURL keyed by name.
+
+    const PNG_1X1_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP8//8/AwAI/AL+Sj0G6AAAAABJRU5ErkJggg=='
+
+    function patchStoreRender(impl: (n: string, c: string, f: string, p: number) => Promise<unknown>): void {
+        const store = useResourceStore()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(store as any).renderExample = vi.fn().mockImplementation(impl)
+    }
+
+    it('starts with empty renderedByName and null renderError', () => {
+        const c = useResourceCardList('example')
+        expect(c.renderedByName.value).toEqual({})
+        expect(c.renderError.value).toBeNull()
+        expect(c.renderingName.value).toBeNull()
+    })
+
+    it('renderExample stores a blobUrl + mime + format keyed by name', async () => {
+        patchStoreRender(async (name) => ({
+            bytes: PNG_1X1_BASE64,
+            mime: 'image/png',
+            format: 'png',
+            source_name: name,
+            width: 1,
+            height: 1,
+        }))
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= hi')
+
+        const cached = c.renderedByName.value['snippet.typ']
+        expect(cached).toBeDefined()
+        expect(cached!.format).toBe('png')
+        expect(cached!.mime).toBe('image/png')
+        expect(cached!.width).toBe(1)
+        expect(cached!.height).toBe(1)
+        expect(cached!.blobUrl).toMatch(/^blob:/)
+        expect(c.renderError.value).toBeNull()
+        expect(c.renderingName.value).toBeNull()
+    })
+
+    it('renderExample asks the store for png @ 144 ppi', async () => {
+        const renderSpy = vi.fn().mockResolvedValue({
+            bytes: PNG_1X1_BASE64,
+            mime: 'image/png',
+            format: 'png',
+            source_name: 'snippet.typ',
+            width: 1,
+            height: 1,
+        })
+        patchStoreRender(renderSpy)
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= hi')
+
+        expect(renderSpy).toHaveBeenCalledWith('snippet.typ', '= hi', 'png', 144)
+    })
+
+    it('renderExample sets renderError when the store rejects with ApiError', async () => {
+        patchStoreRender(async () => {
+            throw new ApiError('compile-failed', 'COMPILE_ERROR', 422)
+        })
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= broken')
+
+        expect(c.renderError.value).toBe('compile-failed')
+        expect(c.renderedByName.value['snippet.typ']).toBeUndefined()
+        expect(c.renderingName.value).toBeNull()
+    })
+
+    it('renderExample sets a fallback renderError when the store rejects with a plain Error', async () => {
+        patchStoreRender(async () => {
+            throw new Error('boom')
+        })
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= broken')
+
+        expect(c.renderError.value).toBe('failed to render example')
+    })
+
+    it('clearRender removes the cached entry', async () => {
+        patchStoreRender(async (name) => ({
+            bytes: PNG_1X1_BASE64,
+            mime: 'image/png',
+            format: 'png',
+            source_name: name,
+            width: 1,
+            height: 1,
+        }))
+
+        const c = useResourceCardList('example')
+        await c.renderExample('a.typ', '= a')
+        expect(c.renderedByName.value['a.typ']).toBeDefined()
+
+        c.clearRender('a.typ')
+        expect(c.renderedByName.value['a.typ']).toBeUndefined()
+    })
+
+    it('clearRender is a no-op for an unknown name', () => {
+        const c = useResourceCardList('example')
+        // Should not throw or mutate state.
+        c.clearRender('never-rendered.typ')
+        expect(c.renderedByName.value).toEqual({})
+    })
+})

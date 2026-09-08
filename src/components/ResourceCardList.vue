@@ -1,3 +1,20 @@
+<script lang="ts">
+/**
+ * Type-only block so the `edit` event payload can be imported
+ * by parents (e.g. TypstPage.vue) without re-declaring the
+ * shape. Vue's `<script setup>` strips non-macro exports at
+ * runtime, so we keep this in a non-setup sibling block — both
+ * blocks share the same module.
+ */
+import type { ResourceKind } from '../composables/useResourceCardList'
+
+export interface EditEventPayload {
+    name: string
+    kind: ResourceKind
+    content: string
+}
+</script>
+
 <script setup lang="ts">
 /**
  * Card grid shared by the Templates and Examples panels.
@@ -7,9 +24,21 @@
  * items are listed first, then a divider, then the skill-shipped
  * built-ins — the layout mirrors the directory partition in the
  * composable's principal/skill computeds.
+ *
+ * Three affordances live on each principal-tier card, mirroring
+ * {@see FontList}:
+ *   - "Copy" next to a `#import` / `#include` snippet so the
+ *     operator can paste the reference straight into Typst.
+ *   - "Edit" emits `edit` with `{ name, kind, content }`; the
+ *     parent (TypstPage) opens the TextResourceEditModal.
+ *   - For examples, "Render" calls the composable's `renderExample`
+ *     (which decodes the `/preview` base64 payload into an inline
+ *     thumbnail). Source is fetched first if the card hasn't been
+ *     expanded yet — the render needs the bytes.
  */
+import { ref } from 'vue'
 import { useResourceStore } from '../stores/resources'
-import { useResourceCardList, type ResourceKind } from '../composables/useResourceCardList'
+import { useResourceCardList } from '../composables/useResourceCardList'
 
 const props = defineProps<{
     kind: ResourceKind
@@ -17,9 +46,15 @@ const props = defineProps<{
     builtInHeadingText: string
 }>()
 
+const emit = defineEmits<{
+    (e: 'edit', payload: EditEventPayload): void
+    (e: 'render-example', payload: { name: string }): void
+}>()
+
 const store = useResourceStore()
 const {
     openNames,
+    sourceByName,
     highlightedByName,
     loadingName,
     loadError,
@@ -28,8 +63,80 @@ const {
     hasItems,
     formatBytes,
     onToggle,
+    ensureSource,
     confirmAndDelete,
+    renderingName,
+    renderError,
+    renderedByName,
+    renderExample,
 } = useResourceCardList(props.kind)
+
+function snippetFor(name: string): string {
+    return props.kind === 'template'
+        ? `#import "templates/${name}"`
+        : `#include "examples/${name}"`
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+    try {
+        await navigator.clipboard.writeText(text)
+        return true
+    } catch {
+        // Non-HTTPS contexts (e.g. local dev without TLS) block
+        // `navigator.clipboard`. Fall back to a hidden textarea +
+        // `execCommand('copy')` so the affordance still works.
+        const textarea = document.createElement('textarea')
+        textarea.value = text
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        try {
+            return document.execCommand('copy')
+        } catch {
+            return false
+        } finally {
+            textarea.remove()
+        }
+    }
+}
+
+const copiedName = ref<string | null>(null)
+const copyError = ref<string | null>(null)
+
+async function copySnippet(name: string): Promise<void> {
+    copyError.value = null
+    const ok = await copyToClipboard(snippetFor(name))
+    if (ok) {
+        copiedName.value = name
+        setTimeout(() => {
+            if (copiedName.value === name) copiedName.value = null
+        }, 1500)
+    } else {
+        copyError.value = name
+    }
+}
+
+function onEdit(name: string): void {
+    // The modal needs the source bytes — fall back to an empty
+    // string if the operator hasn't opened the card yet. The
+    // parent can re-fetch via the composable's ensureSource()
+    // before opening if it wants the real bytes.
+    const content = sourceByName.value[name] ?? ''
+    emit('edit', { name, kind: props.kind, content })
+}
+
+async function onRenderExample(name: string): Promise<void> {
+    // The preview bridge needs the source bytes; ensure they're
+    // loaded (the composable's cache short-circuits re-opens).
+    if (sourceByName.value[name] === undefined) {
+        await ensureSource(name)
+    }
+    const content = sourceByName.value[name]
+    if (content === undefined) return
+    emit('render-example', { name })
+    await renderExample(name, content)
+}
 </script>
 
 <template>
@@ -63,12 +170,20 @@ const {
                                 · <span class="text-muted-foreground/70">Your upload</span>
                             </div>
                         </div>
-                        <button
-                            type="button"
-                            class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
-                            :disabled="store.uploading"
-                            @click="confirmAndDelete(item.name)"
-                        >Delete</button>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                class="text-xs font-medium text-primary hover:text-primary/80 disabled:opacity-40"
+                                :disabled="store.uploading"
+                                @click="onEdit(item.name)"
+                            >Edit</button>
+                            <button
+                                type="button"
+                                class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
+                                :disabled="store.uploading"
+                                @click="confirmAndDelete(item.name)"
+                            >Delete</button>
+                        </div>
                     </div>
                     <details
                         class="text-xs"
@@ -90,6 +205,56 @@ const {
                             ><code class="hljs language-typst" v-html="highlightedByName[item.name]"></code></pre>
                         </div>
                     </details>
+                    <div class="flex items-center gap-2 pt-1">
+                        <span class="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">Use in Typst</span>
+                        <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground truncate inline-block min-w-0 flex-1">{{ snippetFor(item.name) }}</code>
+                        <button
+                            type="button"
+                            :class="[
+                                'shrink-0 rounded px-2 py-0.5 text-xs font-medium transition-colors',
+                                copiedName === item.name
+                                    ? 'bg-primary/10 text-primary'
+                                    : copyError === item.name
+                                        ? 'bg-destructive/10 text-destructive'
+                                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                            ]"
+                            :aria-label="`Copy Typst snippet for ${item.name}`"
+                            @click="copySnippet(item.name)"
+                        >{{ copiedName === item.name ? 'Copied' : 'Copy' }}</button>
+                    </div>
+                    <div
+                        v-if="props.kind === 'example'"
+                        class="flex items-center gap-2 pt-1"
+                    >
+                        <button
+                            type="button"
+                            class="rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
+                            :disabled="renderingName === item.name"
+                            @click="onRenderExample(item.name)"
+                        >{{ renderingName === item.name ? 'Rendering…' : 'Render' }}</button>
+                    </div>
+                    <div
+                        v-if="props.kind === 'example' && renderError !== null"
+                        class="text-xs text-destructive"
+                    >{{ renderError }}</div>
+                    <div
+                        v-if="props.kind === 'example' && renderedByName[item.name] !== undefined"
+                        class="pt-2 border-t border-border"
+                    >
+                        <img
+                            v-if="renderedByName[item.name].format === 'png' || renderedByName[item.name].format === 'svg'"
+                            :src="renderedByName[item.name].blobUrl"
+                            :alt="item.name"
+                            class="max-h-32 mx-auto"
+                        >
+                        <a
+                            v-else-if="renderedByName[item.name].format === 'pdf'"
+                            :href="renderedByName[item.name].blobUrl"
+                            target="_blank"
+                            rel="noopener"
+                            class="text-xs font-medium text-primary hover:text-primary/80"
+                        >Open PDF</a>
+                    </div>
                 </article>
             </div>
             <div
@@ -148,6 +313,56 @@ const {
                                 ><code class="hljs language-typst" v-html="highlightedByName[item.name]"></code></pre>
                             </div>
                         </details>
+                        <div class="flex items-center gap-2 pt-1">
+                            <span class="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">Use in Typst</span>
+                            <code class="rounded bg-background px-1.5 py-0.5 font-mono text-xs text-foreground truncate inline-block min-w-0 flex-1">{{ snippetFor(item.name) }}</code>
+                            <button
+                                type="button"
+                                :class="[
+                                    'shrink-0 rounded px-2 py-0.5 text-xs font-medium transition-colors',
+                                    copiedName === item.name
+                                        ? 'bg-primary/10 text-primary'
+                                        : copyError === item.name
+                                            ? 'bg-destructive/10 text-destructive'
+                                            : 'text-muted-foreground hover:bg-background hover:text-foreground',
+                                ]"
+                                :aria-label="`Copy Typst snippet for ${item.name}`"
+                                @click="copySnippet(item.name)"
+                            >{{ copiedName === item.name ? 'Copied' : 'Copy' }}</button>
+                        </div>
+                        <div
+                            v-if="props.kind === 'example'"
+                            class="flex items-center gap-2 pt-1"
+                        >
+                            <button
+                                type="button"
+                                class="rounded border border-border bg-card px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
+                                :disabled="renderingName === item.name"
+                                @click="onRenderExample(item.name)"
+                            >{{ renderingName === item.name ? 'Rendering…' : 'Render' }}</button>
+                        </div>
+                        <div
+                            v-if="props.kind === 'example' && renderError !== null"
+                            class="text-xs text-destructive"
+                        >{{ renderError }}</div>
+                        <div
+                            v-if="props.kind === 'example' && renderedByName[item.name] !== undefined"
+                            class="pt-2 border-t border-border"
+                        >
+                            <img
+                                v-if="renderedByName[item.name].format === 'png' || renderedByName[item.name].format === 'svg'"
+                                :src="renderedByName[item.name].blobUrl"
+                                :alt="item.name"
+                                class="max-h-32 mx-auto"
+                            >
+                            <a
+                                v-else-if="renderedByName[item.name].format === 'pdf'"
+                                :href="renderedByName[item.name].blobUrl"
+                                target="_blank"
+                                rel="noopener"
+                                class="text-xs font-medium text-primary hover:text-primary/80"
+                            >Open PDF</a>
+                        </div>
                     </article>
                 </div>
             </div>

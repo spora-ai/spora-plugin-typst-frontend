@@ -1,5 +1,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { ApiError } from '../api/client'
+import type { PreviewResult } from '../api/preview'
 import { getExample } from '../api/examples'
 import { getTemplate } from '../api/templates'
 import { highlightTypst } from 'highlightjs-typst/highlight'
@@ -14,6 +15,20 @@ export interface ResourceSummary {
 }
 
 /**
+ * One rendered preview cache entry. `format` mirrors the API
+ * envelope's union (`'pdf' | 'png' | 'svg'`) so the template's
+ * `format === 'png'` / `'svg'` / `'pdf'` branch narrows without
+ * a cast.
+ */
+export interface RenderedPreview {
+    blobUrl: string
+    mime: string
+    format: 'pdf' | 'png' | 'svg'
+    width: number | null
+    height: number | null
+}
+
+/**
  * Format a byte count for the card's `{{ formatBytes(size) }}` slot.
  * Hoisted to module scope because it doesn't read any composable
  * closure and re-creating on every `useResourceCardList()` call
@@ -24,6 +39,23 @@ function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`
     return `${(n / (1024 * 1024)).toFixed(2)} MiB`
+}
+
+/**
+ * Decode the base64 payload `POST /typst/preview` returns into a
+ * `Blob` so we can hand the bytes to `<img src>` / `<a href>` via
+ * a transient objectURL. `atob` operates on a binary string, so
+ * we walk each char and push its byte value into the Uint8Array.
+ * Keeps the conversion in one place — the cache only stores
+ * objectURLs, not raw base64.
+ */
+function base64ToBlob(base64: string, mime: string): Blob {
+    const bytes = atob(base64)
+    const arr = new Uint8Array(bytes.length)
+    for (let i = 0; i < bytes.length; i++) {
+        arr[i] = bytes.charCodeAt(i)
+    }
+    return new Blob([arr], { type: mime })
 }
 
 /**
@@ -56,6 +88,79 @@ export function useResourceCardList(kind: ResourceKind) {
     const highlightedByName = ref<Record<string, string>>({})
     const loadingName = ref<string | null>(null)
     const loadError = ref<string | null>(null)
+
+    const editingName = ref<string | null>(null)
+    const renderingName = ref<string | null>(null)
+    const renderError = ref<string | null>(null)
+    const renderedByName = ref<Record<string, RenderedPreview>>({})
+
+    function startEdit(name: string): void {
+        editingName.value = name
+    }
+
+    function cancelEdit(): void {
+        editingName.value = null
+    }
+
+    function clearRender(name: string): void {
+        const prev = renderedByName.value[name]
+        if (prev === undefined) return
+        // Revoke the objectURL so the underlying Blob can be GC'd;
+        // without this, repeated renders on the same name accumulate
+        // Blob memory until the page reloads.
+        URL.revokeObjectURL(prev.blobUrl)
+        const next = { ...renderedByName.value }
+        delete next[name]
+        renderedByName.value = next
+    }
+
+    async function renderExample(name: string, content: string): Promise<void> {
+        renderingName.value = name
+        renderError.value = null
+        try {
+            // The store's `renderExample` bridge hits `/typst/preview`
+            // and returns a `PreviewResult` (base64 bytes + mime +
+            // format + dims). The store-level indirection keeps the
+            // composable out of the api/* module graph so the
+            // components can render without dragging the network
+            // client in.
+            //
+            // `renderExample` is added to the resource store in a
+            // separate commit; this composable reaches it via a
+            // narrow cast so the surface stays strictly typed
+            // without leaking the field into the store's public
+            // type before that commit lands.
+            type PreviewRender = (
+                n: string,
+                c: string,
+                f: 'pdf' | 'png' | 'svg',
+                p: number,
+            ) => Promise<PreviewResult>
+            const preview = (store as unknown as { renderExample: PreviewRender })
+            const result = await preview.renderExample(name, content, 'png', 144)
+            const blob = base64ToBlob(result.bytes, result.mime)
+            const blobUrl = URL.createObjectURL(blob)
+            // Replace any previous render for this name so the
+            // objectURL → Blob mapping stays 1:1; the previous URL
+            // is revoked below so it can be reclaimed.
+            const prev = renderedByName.value[name]
+            renderedByName.value = {
+                ...renderedByName.value,
+                [name]: {
+                    blobUrl,
+                    mime: result.mime,
+                    format: result.format,
+                    width: result.width,
+                    height: result.height,
+                },
+            }
+            if (prev !== undefined) URL.revokeObjectURL(prev.blobUrl)
+        } catch (e) {
+            renderError.value = e instanceof ApiError ? e.message : 'failed to render example'
+        } finally {
+            renderingName.value = null
+        }
+    }
 
     function onToggle(name: string, event: Event): void {
         const target = event.target as HTMLDetailsElement
@@ -103,6 +208,9 @@ export function useResourceCardList(kind: ResourceKind) {
                 nextOpen.delete(name)
                 openNames.value = nextOpen
             }
+            // A deleted example's cached render is also orphaned —
+            // the Blob is now detached from any on-disk artifact.
+            clearRender(name)
         } catch {
             // store.error already populated
         }
@@ -139,6 +247,15 @@ export function useResourceCardList(kind: ResourceKind) {
         hasItems,
         formatBytes,
         onToggle,
+        ensureSource,
         confirmAndDelete,
+        editingName,
+        startEdit,
+        cancelEdit,
+        renderingName,
+        renderError,
+        renderedByName,
+        renderExample,
+        clearRender,
     }
 }
