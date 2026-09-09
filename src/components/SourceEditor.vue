@@ -45,6 +45,13 @@
  *     line is preserved (the inserted text shifts the caret
  *     right by `text.length`). Used by the Heading tool, which
  *     prefixes the active line with `= `.
+ *   - `applyHeadingAtCaret(level)` — set the caret's line to a
+ *     heading of `level` (1–5). Replaces any existing heading
+ *     marker on the line so repeated clicks don't stack
+ *     markers; if the line has no marker, prepends `= × level`
+ *     followed by a space. The caret stays anchored at the
+ *     same content offset (e.g. column 3 of "foo" stays at the
+ *     'o' even after wrapping with `= = foo`).
  *   - `replaceSelection(text)` — write `text` over the current
  *     selection (or insert at caret if no selection). Used by the
  *     formatting tools when wrapping selected text in `*…*`,
@@ -201,6 +208,65 @@ function insertAtLineStart(text: string): void {
     })
 }
 
+/**
+ * Set the caret's current line to a heading of `level` (1–5).
+ * Replaces any existing heading marker on the line so repeated
+ * clicks don't stack `= = = …` markers — picking H3 on an
+ * already-H2 line cleanly replaces `== ` with `=== ` rather
+ * than appending a third one (which would still render as H2
+ * in Typst but looks broken to the operator).
+ *
+ * Detection: the line must start with `=` repeated 1+ times
+ * followed by a single whitespace char (Typst's heading
+ * grammar — `=` without a trailing space is just literal
+ * `=` characters in markup, not a heading). If no marker, the
+ * line is treated as plain text and the marker is prepended.
+ *
+ * Caret positioning: the caret stays anchored to the same
+ * content offset relative to the line. If the line was
+ * "foo bar" with caret at column 4 ('b'), and we add a level-1
+ * heading marker, the caret lands at "foo |bar" — column 4
+ * of the new line, between 'foo ' and 'bar'. The existing
+ * column anchor survives both the prepend and the replace
+ * paths.
+ */
+function applyHeadingAtCaret(level: number): void {
+    const ta = textareaRef.value
+    if (ta === null) return
+    const source = props.modelValue
+    const caret = ta.selectionStart ?? 0
+    let lineStart = caret
+    while (lineStart > 0 && source[lineStart - 1] !== '\n') {
+        lineStart--
+    }
+    let lineEnd = source.indexOf('\n', lineStart)
+    if (lineEnd === -1) lineEnd = source.length
+    const line = source.slice(lineStart, lineEnd)
+    const marker = '='.repeat(Math.max(1, Math.min(5, level))) + ' '
+    const headingMatch = line.match(/^(=+)(\s)/)
+    let newLine: string
+    let oldMarkerLength: number
+    if (headingMatch) {
+        oldMarkerLength = headingMatch[0].length
+        newLine = marker + line.slice(oldMarkerLength)
+    } else {
+        oldMarkerLength = 0
+        newLine = marker + line
+    }
+    const newSource = source.slice(0, lineStart) + newLine + source.slice(lineEnd)
+    emit('update:modelValue', newSource)
+    requestAnimationFrame(() => {
+        const ta2 = textareaRef.value
+        if (ta2 === null) return
+        ta2.focus({ preventScroll: true })
+        // Caret stays anchored to the same content offset relative
+        // to the line. The delta = newMarkerLength - oldMarkerLength.
+        const delta = marker.length - oldMarkerLength
+        const newCaret = caret + delta
+        ta2.setSelectionRange(newCaret, newCaret)
+    })
+}
+
 defineExpose({
     focus: (opts?: { preventScroll?: boolean }) => {
         textareaRef.value?.focus(opts)
@@ -208,6 +274,7 @@ defineExpose({
     textarea: textareaRef,
     insertAtCaret,
     insertAtLineStart,
+    applyHeadingAtCaret,
     replaceSelection,
     getSelection,
 })

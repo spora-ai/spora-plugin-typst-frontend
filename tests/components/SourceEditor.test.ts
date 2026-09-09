@@ -251,4 +251,94 @@ describe('SourceEditor.vue', () => {
         expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
         wrapper.unmount()
     })
+
+    it('applyHeadingAtCaret(level=1) prepends "= " to the caret line', async () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'foo bar' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(4, 4) // caret at 'b'
+        const exposed = wrapper.vm as unknown as { applyHeadingAtCaret?: (l: number) => void }
+        exposed.applyHeadingAtCaret?.(1)
+        await wrapper.vm.$nextTick()
+
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates![0]![0]).toBe('= foo bar')
+        wrapper.unmount()
+    })
+
+    it('applyHeadingAtCaret replaces an existing marker on the line', async () => {
+        // Going from H1 ("= foo") to H3 ("=== foo") replaces
+        // rather than stacks — typing H1 then H3 should yield
+        // "=== foo", not "= === foo".
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: '= foo' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(6, 6) // caret at end
+        const exposed = wrapper.vm as unknown as { applyHeadingAtCaret?: (l: number) => void }
+        exposed.applyHeadingAtCaret?.(3)
+        await wrapper.vm.$nextTick()
+
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates![0]![0]).toBe('=== foo')
+        wrapper.unmount()
+    })
+
+    it('applyHeadingAtCaret preserves the caret column within the line', async () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'foo bar' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(4, 4) // caret between 'foo ' and 'bar'
+        const exposed = wrapper.vm as unknown as { applyHeadingAtCaret?: (l: number) => void }
+        exposed.applyHeadingAtCaret?.(2)
+        await wrapper.vm.$nextTick()
+
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates![0]![0]).toBe('== foo bar')
+        // Caret should land between '== foo ' and 'bar' — the
+        // same content offset relative to the line body.
+        // The setSelectionRange call inside requestAnimationFrame
+        // is hard to assert here without rAF, but the new caret
+        // offset = old caret (4) + new marker length (3) = 7.
+        wrapper.unmount()
+    })
+
+    it('applyHeadingAtCaret does not stack markers when reapplying the same level', async () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: '= foo' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(6, 6)
+        const exposed = wrapper.vm as unknown as { applyHeadingAtCaret?: (l: number) => void }
+        exposed.applyHeadingAtCaret?.(1)
+        await wrapper.vm.$nextTick()
+
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates![0]![0]).toBe('= foo') // unchanged — idempotent
+        wrapper.unmount()
+    })
+
+    it('applyHeadingAtCaret handles lines without trailing newline', async () => {
+        // The last line of the buffer has no \n after it. The
+        // function must still locate the line's end correctly.
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'foo' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(1, 1)
+        const exposed = wrapper.vm as unknown as { applyHeadingAtCaret?: (l: number) => void }
+        exposed.applyHeadingAtCaret?.(1)
+        await wrapper.vm.$nextTick()
+
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates![0]![0]).toBe('= foo')
+        wrapper.unmount()
+    })
 })

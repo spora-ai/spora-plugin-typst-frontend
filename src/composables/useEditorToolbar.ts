@@ -9,20 +9,19 @@
  *     Underline) and asymmetric tools (Link — sort of, until
  *     the dialog opens) live here.
  *
- *   - `line-start` — operates on the caret's current line.
- *     Inserts the snippet at the START of that line, regardless
- *     of where the caret sits inside the line. Heading uses
- *     this so a multi-line selection still becomes one heading
- *     line and a no-selection click on the active line produces
- *     the expected "= Heading" insertion.
- *
  *   - `link-dialog` — the toolbar opens a modal asking for URL +
  *     label instead of inserting a placeholder. The selection
  *     pre-fills the label. Link is the only tool of this kind
  *     today; the kind exists so future dialog-driven tools
  *     (table, footnote) don't have to special-case themselves.
+ *
+ * Heading used to be `line-start` here but moved to its own
+ * `<HeadingMenu>` component because H1–H5 needs a popover rather
+ * than a single button (clicking H2 once would be ambiguous if
+ * Heading cycled). The toolbar renders the menu before this
+ * tools list.
  */
-export type ToolKind = 'wrap' | 'line-start' | 'link-dialog'
+export type ToolKind = 'wrap' | 'link-dialog'
 
 export interface ToolbarTool {
     /** Visible button label (also the aria-label). */
@@ -41,20 +40,6 @@ export interface ToolbarTool {
      * snippet the toolbar should splice into the buffer.
      */
     wrap: (selection: string) => string
-}
-
-/**
- * Heading: insert `= ` at the start of the caret's current
- * line. With no selection, the placeholder `= Heading\n` lands
- * at the line start so the operator can immediately type the
- * heading text. The column position inside the line is
- * preserved.
- */
-const headingTool: ToolbarTool = {
-    label: 'Heading',
-    kind: 'line-start',
-    placeholder: '= ',
-    wrap: () => '',
 }
 
 /**
@@ -108,13 +93,11 @@ const linkTool: ToolbarTool = {
 }
 
 /**
- * The five formatting tools, in declaration order. The toolbar
- * renders them left-to-right. Heading sits first because it's
- * the most common transform and operators reach for it before
- * inline emphasis.
+ * The four wrap + dialog formatting tools, in declaration
+ * order. The toolbar renders these after the HeadingMenu (which
+ * lives in its own slot since it needs a popover).
  */
 export const FORMATTING_TOOLS: readonly ToolbarTool[] = [
-    headingTool,
     boldTool,
     italicTool,
     underlineTool,

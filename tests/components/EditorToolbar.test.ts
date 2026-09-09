@@ -22,6 +22,7 @@ interface StubEditor {
     getSelection: () => string | null
     insertAtCaret: (text: string) => void
     insertAtLineStart: (text: string) => void
+    applyHeadingAtCaret: (level: number) => void
     focus: (opts?: { preventScroll?: boolean }) => void
     textarea: { selectionStart: number | null; setSelectionRange: (start: number, end: number) => void; focus: () => void } | null
 }
@@ -31,6 +32,7 @@ function makeStub(initialSelection: string | null): { editorRef: StubEditor | nu
         getSelection: vi.fn(() => initialSelection),
         insertAtCaret: vi.fn(),
         insertAtLineStart: vi.fn(),
+        applyHeadingAtCaret: vi.fn(),
         focus: vi.fn(),
         textarea: {
             selectionStart: 0,
@@ -53,11 +55,36 @@ describe('EditorToolbar.vue', () => {
             props: { editorRef },
         })
 
+        // HeadingMenu handles the heading trigger; the toolbar's
+        // own tool list now starts at Bold (Heading was lifted to
+        // a separate component because H1-H5 needs a popover).
         expect(wrapper.find('[data-testid="editor-tool-heading"]').exists()).toBe(true)
         expect(wrapper.find('[data-testid="editor-tool-bold"]').exists()).toBe(true)
         expect(wrapper.find('[data-testid="editor-tool-italic"]').exists()).toBe(true)
         expect(wrapper.find('[data-testid="editor-tool-underline"]').exists()).toBe(true)
         expect(wrapper.find('[data-testid="editor-tool-link"]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('clicking a level in the HeadingMenu popover calls applyHeadingAtCaret on the editor', async () => {
+        const { editorRef, stub } = makeStub(null)
+        const wrapper = mount(EditorToolbar, {
+            props: { editorRef },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        // Open the popover.
+        await wrapper.find('[data-testid="editor-tool-heading"]').trigger('click')
+        await flushPromises()
+
+        // Pick H3.
+        await wrapper.find('[data-testid="heading-level-3"]').trigger('click')
+        await flushPromises()
+
+        expect(stub.applyHeadingAtCaret).toHaveBeenCalledWith(3)
+        // Popover closes after pick.
+        expect(wrapper.find('[data-testid="heading-menu-popover"]').exists()).toBe(false)
         wrapper.unmount()
     })
 
@@ -83,23 +110,6 @@ describe('EditorToolbar.vue', () => {
         await wrapper.find('[data-testid="editor-tool-bold"]').trigger('click')
 
         expect(stub.insertAtCaret).toHaveBeenCalledWith('*bold text*')
-        wrapper.unmount()
-    })
-
-    it('clicking Heading calls insertAtLineStart with "= "', async () => {
-        // Heading is a `line-start` tool — it operates on the
-        // caret's current line, not the selection. Multi-line
-        // selections don't get every line prefixed; only the
-        // caret's line does.
-        const { editorRef, stub } = makeStub('first\nsecond')
-        const wrapper = mount(EditorToolbar, {
-            props: { editorRef },
-        })
-
-        await wrapper.find('[data-testid="editor-tool-heading"]').trigger('click')
-
-        expect(stub.insertAtLineStart).toHaveBeenCalledWith('= ')
-        expect(stub.insertAtCaret).not.toHaveBeenCalled()
         wrapper.unmount()
     })
 

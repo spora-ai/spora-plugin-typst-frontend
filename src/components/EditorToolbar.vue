@@ -2,34 +2,32 @@
 /**
  * Editor toolbar — sits directly above the source editor.
  *
- * Three tool kinds are dispatched here:
- *   - `wrap` — the symmetric tools (Bold, Italic, Underline)
- *     wrap a non-empty selection in their delimiters or insert
- *     a placeholder at the caret when no selection is active.
- *   - `line-start` — Heading inserts `= ` at the START of the
- *     caret's current line so the active line becomes a
- *     heading. Column position inside the line is preserved.
- *   - `link-dialog` — Link opens `<LinkInsertDialog>` with URL
- *     + label inputs. The selection pre-fills the label.
+ * Composition:
+ *   - `<HeadingMenu>` (H1–H5 picker) — rendered before the
+ *     wrap tools since operators reach for headings before
+ *     inline emphasis.
+ *   - Wrap tools (Bold, Italic, Underline) — symmetric
+ *     delimiter-pair tools that wrap a selection or insert a
+ *     placeholder.
+ *   - Link (link-dialog kind) — opens `<LinkInsertDialog>`.
+ *   - `#trailing` slot — caller-provided slot for the Insert
+ *     Template / Insert Image trigger buttons.
  *
- * The toolbar slots:
- *   - `#trailing` — caller-provided slot for the Insert Template /
- *     Insert Image buttons. Those pickers are modal-driven now
- *     (see `<ImageInsertModal>` and `<TemplateInsertModal>`),
- *     so the slot is just the trigger buttons.
+ * Each tool button:
+ *   - Reads `editorRef.getSelection()` for wrap tools
+ *   - Dispatches through `editorRef.insertAtCaret`
+ *   - Re-focuses the editor with `preventScroll: true` so the
+ *     textarea's scroll position survives the toolbar click
+ *
+ * The HeadingMenu emits `insert` with a level (1–5); the toolbar
+ * delegates to `editorRef.applyHeadingAtCaret(level)`, which
+ * replaces any existing heading marker on the caret's line so
+ * clicking H3 on an already-H1 line cleanly upgrades to `=== `
+ * rather than stacking `== = ` on top.
  *
  * Sticky on scroll (`sticky top-0`) so the formatting tools
  * stay reachable while the operator scrolls through a long
  * document.
- *
- * Each tool button:
- *   - Reads `editorRef.getSelection()` for wrap tools
- *   - Dispatches through `editorRef.insertAtCaret` /
- *     `insertAtLineStart` accordingly
- *   - Re-focuses the editor with `preventScroll: true` so the
- *     textarea's scroll position survives the toolbar click
- *     (the previous default scrolled the operator away from
- *     whatever they were reading further down)
  *
  * No keyboard shortcuts in this commit — those are a follow-up.
  */
@@ -40,6 +38,7 @@ import {
     caretOffsetForPlaceholder,
     type ToolbarTool,
 } from '../composables/useEditorToolbar'
+import HeadingMenu from './HeadingMenu.vue'
 import LinkInsertDialog from './LinkInsertDialog.vue'
 
 /**
@@ -53,12 +52,22 @@ export interface EditorSurface {
     getSelection: () => string | null
     insertAtCaret: (text: string) => void
     insertAtLineStart: (text: string) => void
+    applyHeadingAtCaret: (level: number) => void
     focus: (opts?: { preventScroll?: boolean }) => void
     textarea: { selectionStart: number | null; setSelectionRange: (start: number, end: number) => void; focus: () => void } | null
 }
 
 const props = defineProps<{
     editorRef: EditorSurface | null
+    /** Whether the editor is busy (mid-render). Toolbar buttons disable when true. */
+    busy?: boolean
+    /**
+     * Current heading level of the caret's line, if detectable.
+     * Drives the HeadingMenu trigger label ("H1" vs "Heading")
+     * and highlights the active level in the popover. `null`
+     * means the line has no heading marker.
+     */
+    currentLevel?: number | null
 }>()
 
 const showLinkDialog = ref(false)
@@ -77,12 +86,6 @@ function onToolClick(tool: ToolbarTool): void {
         linkInitialLabel.value = selection ?? 'label'
         linkInitialUrl.value = ''
         showLinkDialog.value = true
-        return
-    }
-
-    if (tool.kind === 'line-start') {
-        editor.insertAtLineStart(tool.placeholder)
-        editor.focus({ preventScroll: true })
         return
     }
 
@@ -110,6 +113,13 @@ function onToolClick(tool: ToolbarTool): void {
     }
 }
 
+function onHeadingInsert(level: number): void {
+    const editor = props.editorRef
+    if (editor === null) return
+    editor.applyHeadingAtCaret(level)
+    editor.focus({ preventScroll: true })
+}
+
 function onLinkConfirm(payload: { url: string; label: string }): void {
     const editor = props.editorRef
     if (editor === null) {
@@ -134,6 +144,12 @@ function onLinkCancel(): void {
         role="toolbar"
         aria-label="Editor formatting tools"
     >
+        <HeadingMenu
+            :current-level="currentLevel"
+            :disabled="busy"
+            @insert="onHeadingInsert"
+        />
+        <span class="mx-1 h-5 w-px bg-border" aria-hidden="true" />
         <div class="flex items-center gap-1">
             <button
                 v-for="tool in FORMATTING_TOOLS"

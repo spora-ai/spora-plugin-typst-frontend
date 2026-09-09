@@ -20,9 +20,8 @@ function tool(label: string): ToolbarTool {
 }
 
 describe('FORMATTING_TOOLS', () => {
-    it('exposes Heading, Bold, Italic, Underline, Link in that order', () => {
+    it('exposes Bold, Italic, Underline, Link (Heading moved to <HeadingMenu>)', () => {
         expect(FORMATTING_TOOLS.map((t) => t.label)).toEqual([
-            'Heading',
             'Bold',
             'Italic',
             'Underline',
@@ -45,16 +44,6 @@ describe('applyTool', () => {
     it('Underline wraps in #underline[…] (function-call form, not delimiter pair)', () => {
         expect(applyTool(tool('Underline'), 'hello')).toBe('#underline[hello]')
         expect(applyTool(tool('Underline'), null)).toBe('#underline[underlined]')
-    })
-
-    it('Heading is a line-start tool — placeholder is the "= " marker', () => {
-        // applyTool is only meaningful for `wrap` tools. For
-        // line-start tools the toolbar uses insertAtLineStart
-        // directly, so applyTool's output is unused. The
-        // placeholder is what the dispatcher would pass to
-        // insertAtLineStart.
-        expect(tool('Heading').kind).toBe('line-start')
-        expect(tool('Heading').placeholder).toBe('= ')
     })
 
     it('Link is a link-dialog tool — applyTool returns an empty string', () => {
