@@ -368,7 +368,7 @@ describe('TextResourceEditModal.vue', () => {
         wrapper.unmount()
     })
 
-    it('clears the store error when the modal opens', async () => {
+    it('clears the store error when the modal re-opens after being closed', async () => {
         mockState.error.value = 'stale error'
 
         const wrapper = mount(TextResourceEditModal, {
@@ -381,15 +381,60 @@ describe('TextResourceEditModal.vue', () => {
         })
         await flushPromises()
 
-        // The watcher on `open` runs `store.clearError()` on the
-        // next-open transition. We open twice to assert the clear
-        // path fires; happy-dom mounts with the initial `open`
-        // value so the first open doesn't trigger the watcher.
+        // The watcher on `open` runs `store.clearError()` only on
+        // the open → closed → open transition. The initial mount
+        // (with `open=true`) intentionally doesn't fire it — the
+        // parent already cleared the error before mounting the
+        // modal. Toggle once to assert the watcher path.
         await wrapper.setProps({ open: false })
         await wrapper.setProps({ open: true })
         await flushPromises()
 
         expect(mockState.clearError).toHaveBeenCalled()
+        wrapper.unmount()
+    })
+
+    it('calls dialog.showModal() on initial mount when open=true', async () => {
+        // The previous bug: `props.open=true` from initial mount
+        // didn't trigger the watcher, so the dialog rendered
+        // hidden and the Edit button appeared broken. The fix
+        // adds an explicit showModal() call in onMounted.
+        const wrapper = mount(TextResourceEditModal, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'letter.typ',
+                initialContent: 'fresh',
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        const dialog = wrapper.find<HTMLDialogElement>('[data-testid="text-resource-edit-dialog"]')
+        expect(dialog.exists()).toBe(true)
+        // Native <dialog>.open is true after showModal() runs.
+        expect((dialog.element as HTMLDialogElement).open).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('does not call dialog.showModal() on initial mount when open=false', async () => {
+        // v-if strips the dialog from the DOM entirely when
+        // `open=false`, so this test mainly guards against a
+        // regression where the onMounted path tries to call
+        // showModal() unconditionally.
+        const wrapper = mount(TextResourceEditModal, {
+            props: {
+                open: false,
+                kind: 'template',
+                name: 'letter.typ',
+                initialContent: 'fresh',
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        const dialog = wrapper.find('[data-testid="text-resource-edit-dialog"]')
+        expect(dialog.exists()).toBe(false)
         wrapper.unmount()
     })
 })

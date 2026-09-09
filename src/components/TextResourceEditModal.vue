@@ -27,6 +27,14 @@
  * the backdrop click is short-circuited so an impatient click
  * can't race the in-flight PUT and leave the cache in a
  * half-updated state.
+ *
+ * Mount visibility:
+ *   The parent (`TypstPage.vue`) passes `:open="true"` from the
+ *   initial mount — the watcher on `props.open` only fires on
+ *   change, so `dialog.showModal()` is also called from
+ *   `onMounted` to cover the initial-show case. Without this,
+ *   the dialog renders hidden in the DOM and the Edit button
+ *   appears broken.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useResourceStore } from '../stores/resources'
@@ -116,6 +124,13 @@ watch(() => props.initialContent, (next) => {
 
 onMounted(() => {
     document.addEventListener('keydown', onKey)
+    // The watcher above only fires on `open` CHANGE — the parent
+    // mounts this modal with `open=true` already, so without this
+    // initial showModal() the dialog stays hidden and the Edit
+    // button appears to do nothing.
+    if (props.open && dialogRef.value !== null) {
+        dialogRef.value.showModal()
+    }
 })
 
 onBeforeUnmount(() => {

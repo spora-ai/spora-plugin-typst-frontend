@@ -118,11 +118,16 @@ async function copySnippet(name: string): Promise<void> {
     }
 }
 
-function onEdit(name: string): void {
-    // The modal needs the source bytes — fall back to an empty
-    // string if the operator hasn't opened the card yet. The
-    // parent can re-fetch via the composable's ensureSource()
-    // before opening if it wants the real bytes.
+/**
+ * Open the edit modal for a resource. The modal's `initialContent`
+ * drives the textarea — if we hand it an empty string because the
+ * operator hadn't expanded the card yet, they see a blank editor
+ * and may Save over their file with empty bytes. `ensureSource`
+ * lazy-fetches the source the first time the card is opened; we
+ * call it explicitly here so the modal opens with the real content.
+ */
+async function onEdit(name: string): Promise<void> {
+    await ensureSource(name)
     const content = sourceByName.value[name] ?? ''
     emit('edit', { name, kind: props.kind, content })
 }
