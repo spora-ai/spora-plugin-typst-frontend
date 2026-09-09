@@ -141,4 +141,66 @@ describe('SourceEditor.vue', () => {
         expect(focusSpy).toHaveBeenCalled()
         wrapper.unmount()
     })
+
+    it('exposes insertAtCursor() that splices text at the caret and re-positions the caret', async () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: '= Hello, ' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        // Caret at the end (position 10, just after the comma+space).
+        textarea.setSelectionRange(10, 10)
+        const exposed = wrapper.vm as unknown as { insertAtCursor?: (s: string) => void }
+        expect(typeof exposed.insertAtCursor).toBe('function')
+        exposed.insertAtCursor?.('World')
+        await wrapper.vm.$nextTick()
+
+        // The emitted update carries the spliced string — `v-model`
+        // consumers see a single update per call (no double-write).
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates).toBeDefined()
+        expect(updates![0]![0]).toBe('= Hello, World')
+        wrapper.unmount()
+    })
+
+    it('exposes replaceSelection() that overwrites the selected range', async () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'old text here' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        // Select "text" (positions 4..8) and replace with bold.
+        textarea.setSelectionRange(4, 8)
+        const exposed = wrapper.vm as unknown as { replaceSelection?: (s: string) => void }
+        exposed.replaceSelection?.('*bold*')
+        await wrapper.vm.$nextTick()
+
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates![0]![0]).toBe('old *bold* here')
+        wrapper.unmount()
+    })
+
+    it('exposes getSelection() that returns null when the caret is collapsed', () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'abcdef' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(3, 3)
+        const exposed = wrapper.vm as unknown as { getSelection?: () => string | null }
+        expect(exposed.getSelection?.()).toBeNull()
+        wrapper.unmount()
+    })
+
+    it('exposes getSelection() that returns the selected substring', () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'abcdef' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(2, 4)
+        const exposed = wrapper.vm as unknown as { getSelection?: () => string | null }
+        expect(exposed.getSelection?.()).toBe('cd')
+        wrapper.unmount()
+    })
 })

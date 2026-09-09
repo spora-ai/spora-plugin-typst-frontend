@@ -33,6 +33,24 @@
  *   - `textarea` — the raw `<textarea>` element, for cursor-aware
  *     insertion (`CompileForm.insertAtCursor` after an image is
  *     picked from the picker).
+ *   - `insertAtCursor(text)` — splice `text` into the buffer at
+ *     the current caret (or replace the current selection), then
+ *     re-focus and position the caret just after the insertion.
+ *     Used by the formatting toolbar and the image / template
+ *     pickers.
+ *   - `replaceSelection(text)` — write `text` over the current
+ *     selection (or insert at caret if no selection). Used by the
+ *     formatting tools when wrapping selected text in `*…*`,
+ *     `_…_`, `#underline[…]`, etc.
+ *   - `getSelection()` — return the currently selected substring,
+ *     or `null` if the textarea has no selection. The toolbar
+ *     uses this to decide between "wrap selection" and "insert
+ *     placeholder" behaviour for each formatting tool.
+ *
+ * Both insert/replace methods write back to the model via the
+ * same `@input` event the user's typing triggers, so any
+ * downstream `v-model` consumer sees a single update per call
+ * and the highlight overlay re-renders synchronously.
  */
 import { computed, ref } from 'vue'
 import { highlightTypst } from 'highlightjs-typst/highlight'
@@ -76,9 +94,72 @@ function onEditorScroll(): void {
     pre.scrollLeft = ta.scrollLeft
 }
 
+/**
+ * Return the substring the user has selected, or `null` when the
+ * caret is collapsed (no selection). The textarea's
+ * `selectionStart === selectionEnd` is the canonical "no
+ * selection" check — both indices are equal when the user has
+ * clicked but not dragged.
+ */
+function getSelection(): string | null {
+    const ta = textareaRef.value
+    if (ta === null) return null
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    if (start === end) return null
+    return ta.value.slice(start, end)
+}
+
+/**
+ * Replace the current selection with `text`, or insert `text` at
+ * the caret if there is no selection. Mirrors the behaviour of
+ * the image / template pickers (which only ever insert at the
+ * caret) but adds the selection-replace branch so the
+ * formatting toolbar's wrap-selection case works without
+ * dispatching two events.
+ *
+ * Writing via the same setter the `@input` handler uses keeps
+ * the `v-model` consumer unaware that the change came from JS
+ * rather than the keyboard.
+ */
+function replaceSelection(text: string): void {
+    const ta = textareaRef.value
+    if (ta === null) {
+        // No DOM access — fall back to appending, mirroring the
+        // image picker's defensive branch.
+        const next = props.modelValue + text
+        emit('update:modelValue', next)
+        return
+    }
+    const start = ta.selectionStart ?? props.modelValue.length
+    const end = ta.selectionEnd ?? props.modelValue.length
+    const next = props.modelValue.slice(0, start) + text + props.modelValue.slice(end)
+    emit('update:modelValue', next)
+    requestAnimationFrame(() => {
+        const ta2 = textareaRef.value
+        if (ta2 === null) return
+        ta2.focus()
+        ta2.setSelectionRange(start + text.length, start + text.length)
+    })
+}
+
+/**
+ * Insert `text` at the caret, replacing any active selection.
+ * Equivalent to `replaceSelection(text)` today but kept as a
+ * distinct method so callers can document the intent — image /
+ * template pickers are "insert at caret", the formatting toolbar
+ * is "wrap selection or insert placeholder".
+ */
+function insertAtCursor(text: string): void {
+    replaceSelection(text)
+}
+
 defineExpose({
     focus: () => textareaRef.value?.focus(),
     textarea: textareaRef,
+    insertAtCursor,
+    replaceSelection,
+    getSelection,
 })
 </script>
 
