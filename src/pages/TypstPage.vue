@@ -13,8 +13,9 @@
  * and `tool_name='typst.playground'` on the DB.
  *
  * Cross-tab prefill:
- *   Examples tab's "Open in Editor" button emits `open-in-editor`
- *   with `{ name, content, filename }`. We route it through
+ *   Examples tab's "Open Copy in Editor" button (and the same
+ *   affordance on Templates) emits `open-in-editor` with
+ *   `{ name, content, filename }`. We route it through
  *   `useTabsStore().goToEditor(prefill)` and the Editor consumes
  *   the prefill on its next mount via the tabs store.
  *
@@ -104,9 +105,9 @@ function onEditSaved(): void {
     editTarget.value = null
 }
 
-// Examples tab's "Open in Editor" — switch to the Editor tab with
-// the example's source pre-filled. The Editor consumes the prefill
-// on its next mount.
+// Templates + Examples tab's "Open Copy in Editor" — switch to the
+// Editor tab with the resource's source pre-filled as a copy. The
+// Editor consumes the prefill on its next mount.
 function onOpenInEditor(payload: { name: string; content: string; filename: string }): void {
     tabsStore.goToEditor({ source: payload.content, filename: payload.filename })
 }

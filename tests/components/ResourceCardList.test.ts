@@ -93,3 +93,77 @@ describe('ResourceCardList.vue — Edit affordance', () => {
         wrapper.unmount()
     })
 })
+
+describe('ResourceCardList.vue — Open Copy in Editor', () => {
+    it('renders the button on a template card and emits with <name>-copy.typ filename', async () => {
+        mockState.templates = [{
+            name: 'invoice.typ',
+            kind: 'template',
+            origin: 'principal',
+            size: 200,
+            modified_at: 1_700_000_000,
+        }]
+
+        const wrapper = mount(ResourceCardList, {
+            props: {
+                kind: 'template',
+                emptyText: 'No templates',
+                builtInHeadingText: 'Built-in',
+            },
+        })
+
+        await flushPromises()
+
+        const openCopy = wrapper
+            .findAll('button')
+            .find((b) => b.text() === 'Open Copy in Editor')
+        expect(openCopy).toBeDefined()
+        await openCopy!.trigger('click')
+        await flushPromises()
+
+        const emitted = wrapper.emitted('open-in-editor')
+        expect(emitted).toBeDefined()
+        expect(emitted![0]![0]).toEqual({
+            name: 'invoice.typ',
+            content: '= Real template source\nbody\n',
+            filename: 'invoice-copy.typ',
+        })
+        wrapper.unmount()
+    })
+
+    it('renders the button on an example card', async () => {
+        mockState.examples = [{
+            name: 'headings.typ',
+            kind: 'example',
+            origin: 'principal',
+            size: 80,
+            modified_at: 1_700_000_000,
+        }]
+
+        const wrapper = mount(ResourceCardList, {
+            props: {
+                kind: 'example',
+                emptyText: 'No examples',
+                builtInHeadingText: 'Built-in',
+            },
+        })
+
+        await flushPromises()
+
+        const openCopy = wrapper
+            .findAll('button')
+            .find((b) => b.text() === 'Open Copy in Editor')
+        expect(openCopy).toBeDefined()
+        await openCopy!.trigger('click')
+        await flushPromises()
+
+        const emitted = wrapper.emitted('open-in-editor')
+        expect(emitted).toBeDefined()
+        expect(emitted![0]![0]).toEqual({
+            name: 'headings.typ',
+            content: '= Real example source\nbody\n',
+            filename: 'headings-copy.typ',
+        })
+        wrapper.unmount()
+    })
+})

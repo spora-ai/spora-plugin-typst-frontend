@@ -31,6 +31,13 @@ export interface EditEventPayload {
  *     operator can paste the reference straight into Typst.
  *   - "Edit" emits `edit` with `{ name, kind, content }`; the
  *     parent (TypstPage) opens the TextResourceEditModal.
+ *   - "Open Copy in Editor" emits `open-in-editor` with
+ *     `{ name, content, filename: '<name>-copy.typ' }`. Routes
+ *     through `useTabsStore().goToEditor()` so the Editor tab
+ *     pre-fills with a copy (the original is untouched). Appears
+ *     on both templates and examples — templates make a useful
+ *     starting point for new docs, examples are snippets to
+ *     paste into a doc.
  *   - For examples, "Render" calls the composable's `renderExample`
  *     (which decodes the `/preview` base64 payload into an inline
  *     thumbnail). Source is fetched first if the card hasn't been
@@ -145,10 +152,12 @@ async function onRenderExample(name: string): Promise<void> {
 }
 
 /**
- * Open the Editor tab with this example's source pre-filled. Used
- * for the "Open in Editor" affordance on example cards — the parent
- * (TypstPage) routes this through `useTabsStore().goToEditor()` so
- * the Editor can consume the prefill on its next mount.
+ * Open the Editor tab with this resource's source pre-filled as a
+ * copy. The `-copy.typ` filename signals a new origin so the
+ * operator doesn't accidentally overwrite the original on Save.
+ * The parent (TypstPage) routes this through
+ * `useTabsStore().goToEditor()` so the Editor can consume the
+ * prefill on its next mount.
  */
 async function onOpenInEditor(name: string): Promise<void> {
     if (sourceByName.value[name] === undefined) {
@@ -208,6 +217,13 @@ async function onOpenInEditor(name: string): Promise<void> {
                                 @click="onEdit(item.name)"
                             >Edit</button>
                             <button
+                                v-if="props.kind === 'template'"
+                                type="button"
+                                class="text-xs font-medium text-primary hover:text-primary/80 disabled:opacity-40"
+                                :disabled="store.uploading"
+                                @click="onOpenInEditor(item.name)"
+                            >Open Copy in Editor</button>
+                            <button
                                 type="button"
                                 class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
                                 :disabled="store.uploading"
@@ -262,11 +278,11 @@ async function onOpenInEditor(name: string): Promise<void> {
                             :disabled="renderingName === item.name"
                             @click="onRenderExample(item.name)"
                         >{{ renderingName === item.name ? 'Rendering…' : 'Render' }}</button>
-                        <button
-                            type="button"
-                            class="rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
-                            @click="onOpenInEditor(item.name)"
-                        >Open in Editor</button>
+                            <button
+                                type="button"
+                                class="rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
+                                @click="onOpenInEditor(item.name)"
+                            >Open Copy in Editor</button>
                     </div>
                     <div
                         v-if="props.kind === 'example' && renderError !== null"
@@ -326,7 +342,15 @@ async function onOpenInEditor(name: string): Promise<void> {
                                     </span>
                                 </div>
                             </div>
-                            <span class="text-xs text-muted-foreground/70">Read-only</span>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button
+                                    v-if="props.kind === 'template'"
+                                    type="button"
+                                    class="text-xs font-medium text-primary hover:text-primary/80"
+                                    @click="onOpenInEditor(item.name)"
+                                >Open Copy in Editor</button>
+                                <span class="text-xs text-muted-foreground/70">Read-only</span>
+                            </div>
                         </div>
                         <details
                             class="text-xs"
@@ -379,7 +403,7 @@ async function onOpenInEditor(name: string): Promise<void> {
                                 type="button"
                                 class="rounded border border-border bg-card px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
                                 @click="onOpenInEditor(item.name)"
-                            >Open in Editor</button>
+                            >Open Copy in Editor</button>
                         </div>
                         <div
                             v-if="props.kind === 'example' && renderError !== null"

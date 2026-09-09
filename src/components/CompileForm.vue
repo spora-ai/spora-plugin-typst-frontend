@@ -31,7 +31,8 @@
  *     prefix manually.
  *
  * Cross-tab prefill:
- *   The Examples tab's "Open in Editor" button calls
+ *   The Examples tab's "Open Copy in Editor" button (and the same
+ *   affordance on the Templates tab) calls
  *   `useTabsStore().goToEditor({ source, filename })`. The Editor
  *   reads that prefill on mount via the tabs store and clears it
  *   after consumption.
