@@ -47,30 +47,21 @@ describe('applyTool', () => {
         expect(applyTool(tool('Underline'), null)).toBe('#underline[underlined]')
     })
 
-    it('Link wraps as #link("…")[…] with a placeholder URL', () => {
-        expect(applyTool(tool('Link'), 'click me')).toBe(
-            '#link("https://example.com")[click me]',
-        )
-        expect(applyTool(tool('Link'), null)).toBe(
-            '#link("https://example.com")[label]',
-        )
+    it('Heading is a line-start tool — placeholder is the "= " marker', () => {
+        // applyTool is only meaningful for `wrap` tools. For
+        // line-start tools the toolbar uses insertAtLineStart
+        // directly, so applyTool's output is unused. The
+        // placeholder is what the dispatcher would pass to
+        // insertAtLineStart.
+        expect(tool('Heading').kind).toBe('line-start')
+        expect(tool('Heading').placeholder).toBe('= ')
     })
 
-    it('Heading prefixes every selected line with "= "', () => {
-        expect(applyTool(tool('Heading'), 'first')).toBe('= first')
-        expect(applyTool(tool('Heading'), 'first\nsecond')).toBe('= first\n= second')
-    })
-
-    it('Heading leaves blank lines as a bare "= " marker', () => {
-        // The wrap function emits '= ' (no trailing text) for empty
-        // lines so a blank line in the source still receives a
-        // heading marker when the operator transforms a multi-line
-        // block.
-        expect(applyTool(tool('Heading'), '\n')).toBe('= \n= ')
-    })
-
-    it('Heading with no selection inserts a level-1 placeholder', () => {
-        expect(applyTool(tool('Heading'), null)).toBe('= Heading\n')
+    it('Link is a link-dialog tool — applyTool returns an empty string', () => {
+        // The toolbar opens the dialog instead of inserting a
+        // snippet, so applyTool's output is unused.
+        expect(tool('Link').kind).toBe('link-dialog')
+        expect(applyTool(tool('Link'), 'anything')).toBe('')
     })
 })
 

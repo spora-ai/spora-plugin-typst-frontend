@@ -142,7 +142,7 @@ describe('SourceEditor.vue', () => {
         wrapper.unmount()
     })
 
-    it('exposes insertAtCursor() that splices text at the caret and re-positions the caret', async () => {
+    it('exposes insertAtCaret() that splices text at the caret and re-positions the caret', async () => {
         const wrapper = mount(SourceEditor, {
             props: { modelValue: '= Hello, ' },
             attachTo: document.body,
@@ -150,9 +150,9 @@ describe('SourceEditor.vue', () => {
         const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
         // Caret at the end (position 10, just after the comma+space).
         textarea.setSelectionRange(10, 10)
-        const exposed = wrapper.vm as unknown as { insertAtCursor?: (s: string) => void }
-        expect(typeof exposed.insertAtCursor).toBe('function')
-        exposed.insertAtCursor?.('World')
+        const exposed = wrapper.vm as unknown as { insertAtCaret?: (s: string) => void }
+        expect(typeof exposed.insertAtCaret).toBe('function')
+        exposed.insertAtCaret?.('World')
         await wrapper.vm.$nextTick()
 
         // The emitted update carries the spliced string — `v-model`
@@ -201,6 +201,54 @@ describe('SourceEditor.vue', () => {
         textarea.setSelectionRange(2, 4)
         const exposed = wrapper.vm as unknown as { getSelection?: () => string | null }
         expect(exposed.getSelection?.()).toBe('cd')
+        wrapper.unmount()
+    })
+
+    it('exposes insertAtLineStart() that inserts at the start of the caret line', async () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'first line\nsecond line\nthird' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        // Caret is in the middle of "third" (position 25, at the 'i').
+        // The line starts at position 23 (after the second \n).
+        textarea.setSelectionRange(25, 25)
+        const exposed = wrapper.vm as unknown as { insertAtLineStart?: (s: string) => void }
+        exposed.insertAtLineStart?.('= ')
+        await wrapper.vm.$nextTick()
+
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates).toBeDefined()
+        expect(updates![0]![0]).toBe('first line\nsecond line\n= third')
+        wrapper.unmount()
+    })
+
+    it('insertAtLineStart at the start of the buffer uses offset 0', async () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'hello world' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(6, 6) // caret at 'w'
+        const exposed = wrapper.vm as unknown as { insertAtLineStart?: (s: string) => void }
+        exposed.insertAtLineStart?.('= ')
+        await wrapper.vm.$nextTick()
+
+        const updates = wrapper.emitted('update:modelValue')
+        expect(updates![0]![0]).toBe('= hello world')
+        wrapper.unmount()
+    })
+
+    it('focus() accepts { preventScroll: true } and forwards to the textarea', async () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: '' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        const focusSpy = vi.spyOn(textarea, 'focus')
+        const exposed = wrapper.vm as unknown as { focus?: (opts?: { preventScroll?: boolean }) => void }
+        exposed.focus?.({ preventScroll: true })
+        expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
         wrapper.unmount()
     })
 })

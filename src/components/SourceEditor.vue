@@ -28,8 +28,10 @@
  * to copy).
  *
  * Exposes:
- *   - `focus()` — focus the underlying textarea (used by
- *     `CompileForm.loadStarter` after populating STARTER).
+ *   - `focus(opts?)` — focus the underlying textarea. The
+ *     toolbar passes `{ preventScroll: true }` after every
+ *     insertion so clicking Bold / Italic / Heading doesn't
+ *     yank the textarea's scroll position back to the caret.
  *   - `textarea` — the raw `<textarea>` element, for cursor-aware
  *     insertion (`CompileForm.insertAtCursor` after an image is
  *     picked from the picker).
@@ -38,6 +40,11 @@
  *     re-focus and position the caret just after the insertion.
  *     Used by the formatting toolbar and the image / template
  *     pickers.
+ *   - `insertAtLineStart(text)` — splice `text` at the start of
+ *     the caret's current line. The caret position inside the
+ *     line is preserved (the inserted text shifts the caret
+ *     right by `text.length`). Used by the Heading tool, which
+ *     prefixes the active line with `= `.
  *   - `replaceSelection(text)` — write `text` over the current
  *     selection (or insert at caret if no selection). Used by the
  *     formatting tools when wrapping selected text in `*…*`,
@@ -121,6 +128,11 @@ function getSelection(): string | null {
  * Writing via the same setter the `@input` handler uses keeps
  * the `v-model` consumer unaware that the change came from JS
  * rather than the keyboard.
+ *
+ * The post-write `focus()` passes `preventScroll: true` so the
+ * browser doesn't yank the textarea back to the caret on every
+ * toolbar click — operators were getting scrolled away from
+ * whatever they were reading further down in the document.
  */
 function replaceSelection(text: string): void {
     const ta = textareaRef.value
@@ -138,7 +150,7 @@ function replaceSelection(text: string): void {
     requestAnimationFrame(() => {
         const ta2 = textareaRef.value
         if (ta2 === null) return
-        ta2.focus()
+        ta2.focus({ preventScroll: true })
         ta2.setSelectionRange(start + text.length, start + text.length)
     })
 }
@@ -150,14 +162,52 @@ function replaceSelection(text: string): void {
  * template pickers are "insert at caret", the formatting toolbar
  * is "wrap selection or insert placeholder".
  */
-function insertAtCursor(text: string): void {
+function insertAtCaret(text: string): void {
     replaceSelection(text)
 }
 
+/**
+ * Insert `text` at the start of the caret's current line,
+ * preserving the caret's column position inside that line.
+ * Used by the Heading tool to prefix the active line with
+ * `= ` without disrupting the operator's column.
+ *
+ * If the caret is on the very first line, `lineStart` is 0.
+ * If the caret sits inside an empty line (no characters before
+ * the next `\n`), `lineStart` collapses to the column 0 of the
+ * line — `= ` lands right at the start.
+ */
+function insertAtLineStart(text: string): void {
+    const ta = textareaRef.value
+    if (ta === null) {
+        const next = text + props.modelValue
+        emit('update:modelValue', next)
+        return
+    }
+    const caret = ta.selectionStart ?? 0
+    let lineStart = caret
+    while (lineStart > 0 && props.modelValue[lineStart - 1] !== '\n') {
+        lineStart--
+    }
+    const next = props.modelValue.slice(0, lineStart) + text + props.modelValue.slice(lineStart)
+    emit('update:modelValue', next)
+    requestAnimationFrame(() => {
+        const ta2 = textareaRef.value
+        if (ta2 === null) return
+        ta2.focus({ preventScroll: true })
+        // Place caret just after the inserted snippet (it shifts
+        // right by text.length from its old position).
+        ta2.setSelectionRange(caret + text.length, caret + text.length)
+    })
+}
+
 defineExpose({
-    focus: () => textareaRef.value?.focus(),
+    focus: (opts?: { preventScroll?: boolean }) => {
+        textareaRef.value?.focus(opts)
+    },
     textarea: textareaRef,
-    insertAtCursor,
+    insertAtCaret,
+    insertAtLineStart,
     replaceSelection,
     getSelection,
 })

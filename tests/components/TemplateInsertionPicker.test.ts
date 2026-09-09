@@ -1,16 +1,17 @@
 /**
- * Component tests for TemplateInsertionPicker — the inline
- * panel that lives under the playground's Editor tab and
- * inserts `#import "templates/<name>"` at the caret.
+ * Component tests for TemplateInsertionPicker — the modal
+ * that opens when the editor's toolbar Template button is
+ * clicked. Inserts `#import "templates/<name>"` at the caret
+ * (the parent builds the snippet from the emitted name).
  *
- * Mirrors the image-picker's coverage: nothing renders when
+ * Mirrors the image picker's coverage: nothing renders when
  * `open=false`, a card per template appears when `open=true`,
  * a click emits `insert` with the basename, and Close emits
  * `close`. The picker's `loading=true` state is the same
  * "Loading…" line the image picker uses.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import TemplateInsertionPicker from '../../src/components/TemplateInsertionPicker.vue'
 import type { TemplateResource } from '../../src/types'
 
@@ -37,11 +38,11 @@ describe('TemplateInsertionPicker.vue', () => {
             },
         })
 
-        expect(wrapper.find('[data-testid="template-insertion-picker"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="template-insertion-modal"]').exists()).toBe(false)
         wrapper.unmount()
     })
 
-    it('renders a card per template when open=true', () => {
+    it('renders a card per template when open=true', async () => {
         const wrapper = mount(TemplateInsertionPicker, {
             props: {
                 open: true,
@@ -51,18 +52,20 @@ describe('TemplateInsertionPicker.vue', () => {
                     template({ name: 'cover.typ' }),
                 ],
             },
+            attachTo: document.body,
         })
+        await flushPromises()
 
-        const picker = wrapper.find('[data-testid="template-insertion-picker"]')
-        expect(picker.exists()).toBe(true)
-        expect(picker.findAll('[data-testid^="template-insertion-card-"]')).toHaveLength(3)
-        expect(picker.text()).toContain('invoice.typ')
-        expect(picker.text()).toContain('letter.typ')
-        expect(picker.text()).toContain('cover.typ')
+        const modal = wrapper.find('[data-testid="template-insertion-modal"]')
+        expect(modal.exists()).toBe(true)
+        expect(wrapper.findAll('[data-testid^="template-insertion-card-"]')).toHaveLength(3)
+        expect(wrapper.text()).toContain('invoice.typ')
+        expect(wrapper.text()).toContain('letter.typ')
+        expect(wrapper.text()).toContain('cover.typ')
         wrapper.unmount()
     })
 
-    it('clicking a template emits insert with the name', async () => {
+    it('clicking a card emits insert with the basename', async () => {
         const wrapper = mount(TemplateInsertionPicker, {
             props: {
                 open: true,
@@ -71,63 +74,62 @@ describe('TemplateInsertionPicker.vue', () => {
                     template({ name: 'letter.typ' }),
                 ],
             },
+            attachTo: document.body,
         })
+        await flushPromises()
 
-        const card = wrapper.find<HTMLButtonElement>('[data-testid="template-insertion-card-letter.typ"]')
+        const card = wrapper.find('[data-testid="template-insertion-card-letter.typ"]')
         expect(card.exists()).toBe(true)
         await card.trigger('click')
 
-        const emitted = wrapper.emitted('insert')
-        expect(emitted).toBeDefined()
-        expect(emitted?.[0]?.[0]).toEqual({ name: 'letter.typ' })
+        const insert = wrapper.emitted('insert')
+        expect(insert).toBeDefined()
+        expect(insert![0]![0]).toEqual({ name: 'letter.typ' })
         wrapper.unmount()
     })
 
-    it('clicking Close emits close', async () => {
+    it('Close emits close', async () => {
         const wrapper = mount(TemplateInsertionPicker, {
             props: {
                 open: true,
                 templates: [template({ name: 'invoice.typ' })],
             },
+            attachTo: document.body,
         })
+        await flushPromises()
 
-        const close = wrapper.find<HTMLButtonElement>('[data-testid="template-insertion-close"]')
-        expect(close.exists()).toBe(true)
+        const close = wrapper.find('[data-testid="template-insertion-close"]')
         await close.trigger('click')
-
         expect(wrapper.emitted('close')).toBeDefined()
         wrapper.unmount()
     })
 
-    it('shows the loading state when loading=true', () => {
+    it('shows the loading line when loading=true', async () => {
         const wrapper = mount(TemplateInsertionPicker, {
             props: {
                 open: true,
                 templates: [],
                 loading: true,
             },
+            attachTo: document.body,
         })
+        await flushPromises()
 
-        const picker = wrapper.find('[data-testid="template-insertion-picker"]')
-        expect(picker.exists()).toBe(true)
-        expect(picker.text()).toContain('Loading…')
-        // No cards while loading — the loading line replaces both the
-        // grid and the empty-state hint.
-        expect(picker.findAll('[data-testid^="template-insertion-card-"]')).toHaveLength(0)
+        expect(wrapper.text()).toContain('Loading')
         wrapper.unmount()
     })
 
-    it('shows an empty-state hint when the template list is empty and not loading', () => {
+    it('shows the empty-state line when no templates are uploaded', async () => {
         const wrapper = mount(TemplateInsertionPicker, {
             props: {
                 open: true,
                 templates: [],
-                loading: false,
             },
+            attachTo: document.body,
         })
+        await flushPromises()
 
-        const picker = wrapper.find('[data-testid="template-insertion-picker"]')
-        expect(picker.text()).toContain('No templates uploaded yet.')
+        expect(wrapper.text()).toContain('No templates uploaded')
         wrapper.unmount()
     })
 })

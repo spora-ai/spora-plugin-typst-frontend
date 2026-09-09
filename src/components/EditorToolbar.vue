@@ -2,34 +2,45 @@
 /**
  * Editor toolbar — sits directly above the source editor.
  *
- * Two slots:
- *   - `#leading` (default): the formatting tools (Heading, Bold,
- *     Italic, Underline, Link). Each button reads the
- *     `<SourceEditor>`'s current selection, dispatches through
- *     the matching tool definition in `useEditorToolbar.ts`,
- *     and writes back via `editorRef.replaceSelection(snippet)`.
+ * Three tool kinds are dispatched here:
+ *   - `wrap` — the symmetric tools (Bold, Italic, Underline)
+ *     wrap a non-empty selection in their delimiters or insert
+ *     a placeholder at the caret when no selection is active.
+ *   - `line-start` — Heading inserts `= ` at the START of the
+ *     caret's current line so the active line becomes a
+ *     heading. Column position inside the line is preserved.
+ *   - `link-dialog` — Link opens `<LinkInsertDialog>` with URL
+ *     + label inputs. The selection pre-fills the label.
  *
- *   - `#trailing`: caller-provided slot for the Insert Template /
- *     Insert Image buttons that used to live under the editor.
- *     Kept as a slot (not a built-in) so the toolbar doesn't
- *     own the picker state — the pickers stay in `CompileForm.vue`
- *     where their state already lives.
+ * The toolbar slots:
+ *   - `#trailing` — caller-provided slot for the Insert Template /
+ *     Insert Image buttons. Those pickers are modal-driven now
+ *     (see `<ImageInsertModal>` and `<TemplateInsertModal>`),
+ *     so the slot is just the trigger buttons.
  *
  * Sticky on scroll (`sticky top-0`) so the formatting tools
  * stay reachable while the operator scrolls through a long
- * document. Sticky is relative to the toolbar's nearest
- * scrolling ancestor (the page), so it lifts as the operator
- * scrolls past the editor — which is what they want.
+ * document.
  *
  * Each tool button:
- *   - Reads `editorRef.getSelection()` to decide wrap vs insert
- *   - Calls `editorRef.replaceSelection(snippet)` to write back
- *   - Calls `editorRef.focus()` to keep the caret in the editor
- *     so the next keystroke lands in the buffer
+ *   - Reads `editorRef.getSelection()` for wrap tools
+ *   - Dispatches through `editorRef.insertAtCaret` /
+ *     `insertAtLineStart` accordingly
+ *   - Re-focuses the editor with `preventScroll: true` so the
+ *     textarea's scroll position survives the toolbar click
+ *     (the previous default scrolled the operator away from
+ *     whatever they were reading further down)
  *
  * No keyboard shortcuts in this commit — those are a follow-up.
  */
-import { FORMATTING_TOOLS, applyTool, caretOffsetForPlaceholder, type ToolbarTool } from '../composables/useEditorToolbar'
+import { ref } from 'vue'
+import {
+    FORMATTING_TOOLS,
+    applyTool,
+    caretOffsetForPlaceholder,
+    type ToolbarTool,
+} from '../composables/useEditorToolbar'
+import LinkInsertDialog from './LinkInsertDialog.vue'
 
 /**
  * Structural interface for the editor surface the toolbar drives.
@@ -40,30 +51,48 @@ import { FORMATTING_TOOLS, applyTool, caretOffsetForPlaceholder, type ToolbarToo
  */
 export interface EditorSurface {
     getSelection: () => string | null
-    replaceSelection: (text: string) => void
-    focus: () => void
+    insertAtCaret: (text: string) => void
+    insertAtLineStart: (text: string) => void
+    focus: (opts?: { preventScroll?: boolean }) => void
     textarea: { selectionStart: number | null; setSelectionRange: (start: number, end: number) => void; focus: () => void } | null
 }
 
 const props = defineProps<{
-    /**
-     * The SourceEditor instance (Vue auto-unwraps the caller's
-     * ref when binding `:editor-ref="someRef"`). Nullable so the
-     * toolbar can render before the editor mounts — every method
-     * call short-circuits on null.
-     */
     editorRef: EditorSurface | null
 }>()
+
+const showLinkDialog = ref(false)
+const linkInitialUrl = ref('')
+const linkInitialLabel = ref('')
 
 function onToolClick(tool: ToolbarTool): void {
     const editor = props.editorRef
     if (editor === null) return
+
+    if (tool.kind === 'link-dialog') {
+        // Pre-fill the label with the operator's current selection
+        // so they can highlight some text, click Link, and only
+        // need to fill in the URL.
+        const selection = editor.getSelection()
+        linkInitialLabel.value = selection ?? 'label'
+        linkInitialUrl.value = ''
+        showLinkDialog.value = true
+        return
+    }
+
+    if (tool.kind === 'line-start') {
+        editor.insertAtLineStart(tool.placeholder)
+        editor.focus({ preventScroll: true })
+        return
+    }
+
+    // wrap tool
     const selection = editor.getSelection()
     const snippet = applyTool(tool, selection)
-    editor.replaceSelection(snippet)
-    // Restore caret at the placeholder's natural insertion point
-    // (e.g. inside `*…*`) so the next keystroke lands in the
-    // buffer without re-typing markers.
+    editor.insertAtCaret(snippet)
+    // Re-position the caret at the placeholder's natural
+    // insertion point so the next keystroke lands inside the
+    // open markers (e.g. inside `*…*` for Bold).
     const caretOffset = caretOffsetForPlaceholder(snippet)
     if (caretOffset >= 0) {
         const ta = editor.textarea
@@ -77,8 +106,25 @@ function onToolClick(tool: ToolbarTool): void {
             })
         }
     } else {
-        editor.focus()
+        editor.focus({ preventScroll: true })
     }
+}
+
+function onLinkConfirm(payload: { url: string; label: string }): void {
+    const editor = props.editorRef
+    if (editor === null) {
+        showLinkDialog.value = false
+        return
+    }
+    const label = payload.label === '' ? 'label' : payload.label
+    const snippet = `#link("${payload.url}")[${label}]`
+    editor.insertAtCaret(snippet)
+    editor.focus({ preventScroll: true })
+    showLinkDialog.value = false
+}
+
+function onLinkCancel(): void {
+    showLinkDialog.value = false
 }
 </script>
 
@@ -102,5 +148,13 @@ function onToolClick(tool: ToolbarTool): void {
         </div>
         <span class="mx-1 h-5 w-px bg-border" aria-hidden="true" />
         <slot name="trailing" />
+
+        <LinkInsertDialog
+            :open="showLinkDialog"
+            :initial-url="linkInitialUrl"
+            :initial-label="linkInitialLabel"
+            @confirm="onLinkConfirm"
+            @cancel="onLinkCancel"
+        />
     </div>
 </template>

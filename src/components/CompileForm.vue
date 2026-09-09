@@ -40,17 +40,32 @@
  *     or inserts a placeholder. See `useEditorToolbar.ts` for the
  *     per-tool dispatch logic.
  *   - **Insert Template / Insert Image** (trailing slot of the
- *     toolbar) — these pickers stay in CompileForm because their
- *     state is local (modal open / loading / templates list),
- *     but they live in the toolbar so the operator doesn't have
- *     to scroll to reach them.
+ *     toolbar) — these trigger `<TemplateInsertionPicker>` and
+ *     `<ImageInsertModal>` respectively. Both are modals now
+ *     (the previous inline panels pushed other affordances off
+ *     screen as the source grew).
  *
  * Cross-tab prefill:
  *   The Examples tab's "Open Copy in Editor" button (and the same
  *   affordance on the Templates tab) calls
  *   `useTabsStore().goToEditor({ source, filename })`. The Editor
  *   reads that prefill on mount via the tabs store and clears it
- *   after consumption.
+ *   after consumption. Prefill takes precedence over the
+ *   sessionStorage buffer (see below) — the operator's explicit
+ *   "start from this template" action wins over the persisted
+ *   draft.
+ *
+ * Buffer persistence:
+ *   The source + filename are mirrored to `sessionStorage` under
+ *   `spora.typst.editor.buffer.<principal_id>` whenever they
+ *   change (300ms debounced). The buffer survives page reloads
+ *   within the same browser tab. Switching principals loads the
+ *   buffer for the new principal.
+ *   The Clear button (next to New) wipes both the in-memory
+ *   buffer AND the sessionStorage entry for the current
+ *   principal. New leaves the sessionStorage entry alone — the
+ *   next page reload restores it, so an accidental click
+ *   doesn't lose work.
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ApiError } from '../api/client'
@@ -66,6 +81,7 @@ import type { ImageResource, MediaArchiveImage, PlaygroundSourceSummary, Templat
 import OpenPickerModal from './OpenPickerModal.vue'
 import SourceEditor from './SourceEditor.vue'
 import TemplateInsertionPicker from './TemplateInsertionPicker.vue'
+import ImageInsertModal from './ImageInsertModal.vue'
 import EditorToolbar from './EditorToolbar.vue'
 
 defineProps<{
@@ -103,6 +119,63 @@ This is rendered by ext-typst #v(0.5em) via the plugin.
 `
 
 const STARTER_NAME = 'editor.typ'
+
+/**
+ * sessionStorage key for the per-principal editor buffer.
+ * One buffer per principal so admins switching between
+ * principals (the chip row in the tab header) keep separate
+ * drafts. Storage is session-scoped (cleared when the browser
+ * tab closes) — not local — so we don't keep stale drafts on
+ * shared machines.
+ */
+const BUFFER_STORAGE_PREFIX = 'spora.typst.editor.buffer.'
+
+function bufferStorageKey(principalId: number | null): string | null {
+    if (principalId === null) return null
+    return `${BUFFER_STORAGE_PREFIX}${principalId}`
+}
+
+interface StoredBuffer {
+    source: string
+    filename: string
+}
+
+function loadStoredBuffer(principalId: number | null): StoredBuffer | null {
+    const key = bufferStorageKey(principalId)
+    if (key === null) return null
+    try {
+        const raw = sessionStorage.getItem(key)
+        if (raw === null) return null
+        const parsed = JSON.parse(raw) as { source?: unknown; filename?: unknown }
+        if (typeof parsed.source === 'string' && typeof parsed.filename === 'string') {
+            return { source: parsed.source, filename: parsed.filename }
+        }
+    } catch {
+        // Corrupt entry — ignore so the editor still mounts.
+    }
+    return null
+}
+
+function persistBuffer(principalId: number | null, src: string, fname: string): void {
+    const key = bufferStorageKey(principalId)
+    if (key === null) return
+    try {
+        sessionStorage.setItem(key, JSON.stringify({ source: src, filename: fname }))
+    } catch {
+        // Quota exceeded or storage disabled — silently drop the
+        // persistence. The in-memory buffer still works.
+    }
+}
+
+function clearStoredBuffer(principalId: number | null): void {
+    const key = bufferStorageKey(principalId)
+    if (key === null) return
+    try {
+        sessionStorage.removeItem(key)
+    } catch {
+        // ignore
+    }
+}
 
 const source = ref('')
 const filename = ref('')
@@ -200,20 +273,16 @@ function closeTemplatePicker(): void {
 }
 
 function insertAtCursor(snippet: string): void {
-    const ta = editorRef.value?.textarea ?? null
-    if (ta === null) {
-        // Fallback: append to end
+    // Kept as a local helper for backward-compat with the inline
+    // pickers. The toolbar now uses editorRef.value?.insertAtCaret
+    // which handles preventScroll + caret positioning in one place.
+    const editor = editorRef.value
+    if (editor === null) {
         source.value = source.value + '\n' + snippet + '\n'
         return
     }
-    const start = ta.selectionStart ?? source.value.length
-    const end = ta.selectionEnd ?? source.value.length
-    source.value = source.value.slice(0, start) + snippet + source.value.slice(end)
-    // Restore caret just after the inserted text
-    requestAnimationFrame(() => {
-        ta.focus()
-        ta.setSelectionRange(start + snippet.length, start + snippet.length)
-    })
+    editor.insertAtCaret(snippet)
+    editor.focus({ preventScroll: true })
 }
 
 function pickPluginImage(img: ImageResource): void {
@@ -246,6 +315,10 @@ function closeOpenPicker(): void {
 
 function onChangePickerKind(kind: SourcesKindFilter): void {
     sourcesStore.setKind(kind)
+}
+
+function onPickerTabChange(tab: 'plugin' | 'media'): void {
+    pickerTab.value = tab
 }
 
 async function pickExistingSource(summary: PlaygroundSourceSummary): Promise<void> {
@@ -475,16 +548,78 @@ watch(filename, () => {
     }
 })
 
+/**
+ * Persist the buffer to sessionStorage on change. 300ms
+ * debounce so a fast typist doesn't write on every keystroke —
+ * the buffer only needs to survive reloads, not be real-time.
+ * Skips persistence when there's nothing meaningful in the
+ * buffer (both fields empty) so the Clear button truly wipes.
+ */
+let persistTimer: number | null = null
+watch([source, filename], () => {
+    if (persistTimer !== null) clearTimeout(persistTimer)
+    persistTimer = window.setTimeout(() => {
+        if (source.value === '' && filename.value === '') return
+        persistBuffer(principalsStore.selectedPrincipalId, source.value, filename.value)
+    }, 300)
+})
+
+/**
+ * Clear the in-memory buffer AND the sessionStorage entry for
+ * the current principal. Distinct from `startNewSource()` which
+ * leaves the session entry alone — an accidental New click
+ * shouldn't lose work across reloads; Clear is the explicit
+ * "wipe everything for this principal" action.
+ */
+function clearBuffer(): void {
+    source.value = ''
+    filename.value = ''
+    currentSourceId.value = null
+    currentSourceIsDirty.value = false
+    result.value = null
+    revokeResultBlob()
+    error.value = null
+    diagnostics.value = null
+    clearStoredBuffer(principalsStore.selectedPrincipalId)
+}
+
+/**
+ * When the principal changes, swap the in-memory buffer for
+ * the buffer that belongs to the new principal. The previous
+ * principal's buffer was already persisted on each change so
+ * switching away and back restores the right draft.
+ */
+watch(
+    () => principalsStore.selectedPrincipalId,
+    (newId, oldId) => {
+        // Persist the outgoing buffer first so we don't lose
+        // anything that didn't yet hit the 300ms debounce.
+        if (oldId !== null && (source.value !== '' || filename.value !== '')) {
+            persistBuffer(oldId, source.value, filename.value)
+        }
+        const stored = loadStoredBuffer(newId)
+        source.value = stored?.source ?? ''
+        filename.value = stored?.filename ?? ''
+        currentSourceId.value = null
+        currentSourceIsDirty.value = false
+        result.value = null
+        revokeResultBlob()
+        error.value = null
+        diagnostics.value = null
+    },
+)
+
 onMounted(() => {
     // Eagerly fetch the image picker so the first click is snappy.
     loadPickerImages().catch(() => { /* ignored — picker re-fetches on open */ })
     sourcesStore.loadSources().catch(() => { /* ignored — picker re-fetches on open */ })
     resourcesStore.loadTemplates().catch(() => { /* ignored — picker re-fetches on open */ })
 
-    // Cross-tab prefill: when an Example card opens the Editor via
-    // the tabs store, consume the prefill here. Cleared after
-    // consumption so a tab switch back to the Editor doesn't
-    // re-populate the buffer.
+    // Restore order:
+    //   1. Cross-tab prefill wins (explicit operator action from
+    //      a Template / Example card via useTabsStore).
+    //   2. Session-storage buffer for the current principal.
+    //   3. Empty (fresh start).
     const prefill = tabsStore.editorPrefill
     if (prefill !== null) {
         if (prefill.source !== '') {
@@ -494,6 +629,12 @@ onMounted(() => {
             filename.value = prefill.filename
         }
         tabsStore.clearEditorPrefill()
+    } else {
+        const stored = loadStoredBuffer(principalsStore.selectedPrincipalId)
+        if (stored !== null) {
+            source.value = stored.source
+            filename.value = stored.filename
+        }
     }
 })
 </script>
@@ -559,6 +700,20 @@ onMounted(() => {
                         <polyline points="14 2 14 8 20 8" />
                     </svg>
                     New
+                </button>
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-muted-foreground text-sm font-medium hover:bg-muted"
+                    title="Clear the buffer and wipe the session-storage entry for this principal"
+                    data-testid="compile-form-clear"
+                    @click="clearBuffer"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    </svg>
+                    Clear
                 </button>
                 <button
                     v-if="hasOpenFile"
@@ -688,67 +843,17 @@ onMounted(() => {
                     </button>
                 </div>
             </div>
-            <div v-if="pickerOpen" class="rounded-md border border-border bg-background p-3 space-y-2">
-                <div class="flex items-center justify-between gap-2">
-                    <div class="flex gap-1">
-                        <button
-                            type="button"
-                            :class="[
-                                'px-3 py-1 text-xs rounded-md transition-colors',
-                                pickerTab === 'plugin'
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'bg-muted text-muted-foreground hover:text-foreground',
-                            ]"
-                            @click="pickerTab = 'plugin'"
-                        >Plugin images ({{ pluginImages.length }})</button>
-                        <button
-                            type="button"
-                            :class="[
-                                'px-3 py-1 text-xs rounded-md transition-colors',
-                                pickerTab === 'media'
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'bg-muted text-muted-foreground hover:text-foreground',
-                            ]"
-                            @click="pickerTab = 'media'"
-                        >Media archive ({{ mediaImages.length }})</button>
-                    </div>
-                    <button
-                        type="button"
-                        class="text-xs text-muted-foreground hover:text-foreground"
-                        @click="closeImagePicker"
-                    >Close</button>
-                </div>
-                <div v-if="pickerLoading" class="text-xs text-muted-foreground py-3 text-center">Loading…</div>
-                <div v-else-if="pickerTab === 'plugin' && pluginImages.length === 0" class="text-xs text-muted-foreground py-3 text-center">
-                    No plugin images. Upload some via the Images tab first.
-                </div>
-                <div v-else-if="pickerTab === 'media' && mediaImages.length === 0" class="text-xs text-muted-foreground py-3 text-center">
-                    No media-archive images visible to the current principal.
-                </div>
-                <div v-else class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
-                    <button
-                        v-for="img in (pickerTab === 'plugin' ? pluginImages : mediaImages)"
-                        :key="(img as ImageResource).name ?? (img as MediaArchiveImage).id"
-                        type="button"
-                        class="border border-border rounded-md overflow-hidden bg-card hover:border-primary transition-colors text-left"
-                        @click="pickerTab === 'plugin'
-                            ? pickPluginImage(img as ImageResource)
-                            : pickMediaImage(img as MediaArchiveImage)"
-                    >
-                        <div class="aspect-square bg-muted flex items-center justify-center">
-                            <img
-                                :src="pickerTab === 'plugin' ? (img as ImageResource).url : (img as MediaArchiveImage).asset_url"
-                                :alt="(img as ImageResource).name ?? (img as MediaArchiveImage).filename"
-                                class="max-w-full max-h-full object-contain"
-                                loading="lazy"
-                            />
-                        </div>
-                        <div class="p-1.5 text-[10px] font-mono truncate" :title="(img as ImageResource).name ?? (img as MediaArchiveImage).filename">
-                            {{ (img as ImageResource).name ?? (img as MediaArchiveImage).filename }}
-                        </div>
-                    </button>
-                </div>
-            </div>
+            <ImageInsertModal
+                :open="pickerOpen"
+                :plugin-images="pluginImages"
+                :media-images="mediaImages"
+                :loading="pickerLoading"
+                :active-tab="pickerTab"
+                @close="closeImagePicker"
+                @pick-plugin-image="pickPluginImage"
+                @pick-media-image="pickMediaImage"
+                @change-tab="onPickerTabChange"
+            />
             <TemplateInsertionPicker
                 :open="templatePickerOpen"
                 :templates="templates"
