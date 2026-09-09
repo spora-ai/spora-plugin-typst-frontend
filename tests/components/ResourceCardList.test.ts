@@ -2,11 +2,13 @@
  * Component tests for ResourceCardList — the shared card grid for
  * the Templates and Examples panels.
  *
- * The composable underneath (`useResourceCardList`) is tested in
- * isolation. The component tests here focus on the wiring that
- * sits ABOVE the composable: that the Edit button awaits source
- * fetching before emitting, and that the edit event payload
- * carries the real (not empty) source bytes.
+ * Post-overlay-refactor: cards are thin title-tiles. Clicking a
+ * card opens `<ResourceOverlay>` which owns the source viewer +
+ * action bar (Edit, Copy as import, Open Copy in Editor, Render,
+ * Delete). Tests pin the card → overlay wiring: clicking opens
+ * the overlay, the overlay's action buttons bubble events up to
+ * the parent, and the source cache is populated before the
+ * overlay is shown.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -14,13 +16,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import ResourceCardList from '../../src/components/ResourceCardList.vue'
 import type { ExampleResource, TemplateResource } from '../../src/types'
 
-/**
- * Mutable holder for the store mock. We use a Pinia store with
- * refs so the composable's destructuring (`const { loading } = store`)
- * yields unwrapped values via Pinia's proxy — exactly like the
- * real `useResourceStore()`. The test mutates these refs to drive
- * the composable's UI states.
- */
 const mockState = {
     templates: [] as TemplateResource[],
     examples: [] as ExampleResource[],
@@ -31,6 +26,8 @@ const mockState = {
     loadExamples: vi.fn(),
     loadAll: vi.fn(),
     renderExample: vi.fn(),
+    removeTemplate: vi.fn(),
+    removeExample: vi.fn(),
 }
 
 vi.mock('../../src/stores/resources', () => ({
@@ -56,10 +53,12 @@ beforeEach(() => {
     mockState.loadExamples.mockReset()
     mockState.loadAll.mockReset()
     mockState.renderExample.mockReset()
+    mockState.removeTemplate.mockReset()
+    mockState.removeExample.mockReset()
 })
 
-describe('ResourceCardList.vue — Edit affordance', () => {
-    it('awaits source fetch before emitting edit, so the modal opens with real bytes', async () => {
+describe('ResourceCardList.vue — card + overlay wiring', () => {
+    it('clicking a card opens the overlay with the source fetched', async () => {
         mockState.templates = [{
             name: 'invoice.typ',
             kind: 'template',
@@ -78,9 +77,46 @@ describe('ResourceCardList.vue — Edit affordance', () => {
 
         await flushPromises()
 
-        const edit = wrapper.findAll('button').find((b) => b.text() === 'Edit')
-        expect(edit).toBeDefined()
-        await edit!.trigger('click')
+        const card = wrapper.find('[data-testid="resource-card-invoice.typ"]')
+        expect(card.exists()).toBe(true)
+        await card.trigger('click')
+        await flushPromises()
+
+        // The overlay's dialog mounts once openName is set. We
+        // assert via the dialog's testid rather than the dialog's
+        // `open` attribute (happy-dom may not surface it the same
+        // way as a real browser).
+        const overlay = wrapper.find('[data-testid="resource-overlay-dialog"]')
+        expect(overlay.exists()).toBe(true)
+        const title = wrapper.find('[data-testid="resource-overlay-title"]')
+        expect(title.text()).toBe('Template: invoice.typ')
+        wrapper.unmount()
+    })
+
+    it('the overlay emits "edit" with { name, kind, content } when Edit is clicked', async () => {
+        mockState.templates = [{
+            name: 'invoice.typ',
+            kind: 'template',
+            origin: 'principal',
+            size: 200,
+            modified_at: 1_700_000_000,
+        }]
+
+        const wrapper = mount(ResourceCardList, {
+            props: {
+                kind: 'template',
+                emptyText: 'No templates',
+                builtInHeadingText: 'Built-in',
+            },
+        })
+
+        await flushPromises()
+        await wrapper.find('[data-testid="resource-card-invoice.typ"]').trigger('click')
+        await flushPromises()
+
+        const edit = wrapper.find('[data-testid="resource-overlay-edit"]')
+        expect(edit.exists()).toBe(true)
+        await edit.trigger('click')
         await flushPromises()
 
         const emitted = wrapper.emitted('edit')
@@ -92,10 +128,8 @@ describe('ResourceCardList.vue — Edit affordance', () => {
         })
         wrapper.unmount()
     })
-})
 
-describe('ResourceCardList.vue — Open Copy in Editor', () => {
-    it('renders the button on a template card and emits with <name>-copy.typ filename', async () => {
+    it('the overlay emits "open-in-editor" with <name>-copy.typ filename when clicked', async () => {
         mockState.templates = [{
             name: 'invoice.typ',
             kind: 'template',
@@ -113,12 +147,10 @@ describe('ResourceCardList.vue — Open Copy in Editor', () => {
         })
 
         await flushPromises()
+        await wrapper.find('[data-testid="resource-card-invoice.typ"]').trigger('click')
+        await flushPromises()
 
-        const openCopy = wrapper
-            .findAll('button')
-            .find((b) => b.text() === 'Open Copy in Editor')
-        expect(openCopy).toBeDefined()
-        await openCopy!.trigger('click')
+        await wrapper.find('[data-testid="resource-overlay-open-copy"]').trigger('click')
         await flushPromises()
 
         const emitted = wrapper.emitted('open-in-editor')
@@ -131,7 +163,7 @@ describe('ResourceCardList.vue — Open Copy in Editor', () => {
         wrapper.unmount()
     })
 
-    it('renders the button on an example card', async () => {
+    it('the overlay emits "open-in-editor" for example cards too', async () => {
         mockState.examples = [{
             name: 'headings.typ',
             kind: 'example',
@@ -149,12 +181,10 @@ describe('ResourceCardList.vue — Open Copy in Editor', () => {
         })
 
         await flushPromises()
+        await wrapper.find('[data-testid="resource-card-headings.typ"]').trigger('click')
+        await flushPromises()
 
-        const openCopy = wrapper
-            .findAll('button')
-            .find((b) => b.text() === 'Open Copy in Editor')
-        expect(openCopy).toBeDefined()
-        await openCopy!.trigger('click')
+        await wrapper.find('[data-testid="resource-overlay-open-copy"]').trigger('click')
         await flushPromises()
 
         const emitted = wrapper.emitted('open-in-editor')
@@ -164,6 +194,95 @@ describe('ResourceCardList.vue — Open Copy in Editor', () => {
             content: '= Real example source\nbody\n',
             filename: 'headings-copy.typ',
         })
+        wrapper.unmount()
+    })
+
+    it('the overlay only renders the Render button for example cards', async () => {
+        mockState.templates = [{
+            name: 'invoice.typ',
+            kind: 'template',
+            origin: 'principal',
+            size: 200,
+            modified_at: 1_700_000_000,
+        }]
+
+        const wrapper = mount(ResourceCardList, {
+            props: {
+                kind: 'template',
+                emptyText: 'No templates',
+                builtInHeadingText: 'Built-in',
+            },
+        })
+
+        await flushPromises()
+        await wrapper.find('[data-testid="resource-card-invoice.typ"]').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="resource-overlay-render"]').exists()).toBe(false)
+        // Delete + Edit only on principal-tier.
+        expect(wrapper.find('[data-testid="resource-overlay-edit"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="resource-overlay-delete"]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('the overlay hides Edit + Delete for skill-shipped items', async () => {
+        // Pinia store is empty by default; we need a way to seed
+        // a skill item. The composable reads `store.templates` so
+        // seeding directly works.
+        mockState.templates = [{
+            name: 'invoice.typ',
+            kind: 'template',
+            origin: 'skill',
+            size: 200,
+            modified_at: 1_700_000_000,
+        }]
+
+        const wrapper = mount(ResourceCardList, {
+            props: {
+                kind: 'template',
+                emptyText: 'No templates',
+                builtInHeadingText: 'Built-in',
+            },
+        })
+
+        await flushPromises()
+        await wrapper.find('[data-testid="resource-card-invoice.typ"]').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="resource-overlay-edit"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="resource-overlay-delete"]').exists()).toBe(false)
+        expect(wrapper.text()).toContain('Built-in')
+        wrapper.unmount()
+    })
+
+    it('the overlay emits close when the Close button is clicked', async () => {
+        mockState.templates = [{
+            name: 'invoice.typ',
+            kind: 'template',
+            origin: 'principal',
+            size: 200,
+            modified_at: 1_700_000_000,
+        }]
+
+        const wrapper = mount(ResourceCardList, {
+            props: {
+                kind: 'template',
+                emptyText: 'No templates',
+                builtInHeadingText: 'Built-in',
+            },
+        })
+
+        await flushPromises()
+        await wrapper.find('[data-testid="resource-card-invoice.typ"]').trigger('click')
+        await flushPromises()
+
+        const close = wrapper.find('[data-testid="resource-overlay-close"]')
+        expect(close.exists()).toBe(true)
+        await close.trigger('click')
+        await flushPromises()
+
+        // After close, the overlay should be unmounted.
+        expect(wrapper.find('[data-testid="resource-overlay-dialog"]').exists()).toBe(false)
         wrapper.unmount()
     })
 })

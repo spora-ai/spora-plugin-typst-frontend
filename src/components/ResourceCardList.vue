@@ -25,27 +25,34 @@ export interface EditEventPayload {
  * built-ins — the layout mirrors the directory partition in the
  * composable's principal/skill computeds.
  *
- * Three affordances live on each principal-tier card, mirroring
- * {@see FontList}:
- *   - "Copy" next to a `#import` / `#include` snippet so the
- *     operator can paste the reference straight into Typst.
- *   - "Edit" emits `edit` with `{ name, kind, content }`; the
- *     parent (TypstPage) opens the TextResourceEditModal.
- *   - "Open Copy in Editor" emits `open-in-editor` with
- *     `{ name, content, filename: '<name>-copy.typ' }`. Routes
- *     through `useTabsStore().goToEditor()` so the Editor tab
- *     pre-fills with a copy (the original is untouched). Appears
- *     on both templates and examples — templates make a useful
- *     starting point for new docs, examples are snippets to
- *     paste into a doc.
- *   - For examples, "Render" calls the composable's `renderExample`
- *     (which decodes the `/preview` base64 payload into an inline
- *     thumbnail). Source is fetched first if the card hasn't been
- *     expanded yet — the render needs the bytes.
+ * Each card is now a thin title-tile: the card body has only the
+ * resource name + size + origin label. Clicking anywhere on the
+ * card opens `<ResourceOverlay>` (the new single-action modal)
+ * which holds the source viewer, edit affordance, copy-snippet
+ * button, "Open Copy in Editor" / Render / Delete actions, and
+ * the cached render thumbnail. The card no longer carries inline
+ * `<details>` expansion + per-card action buttons — every action
+ * lives in the overlay so the card grid stays uniform.
+ *
+ * The overlay is rendered inside this component (not the parent)
+ * because its source + render cache live in
+ * `useResourceCardList` and would otherwise need to be lifted to
+ * the parent. Owning the overlay here keeps the cache locality
+ * clean and the parent free of resource-specific state.
+ *
+ * Events bubbling up:
+ *   - `edit` — Edit clicked in the overlay. The parent opens
+ *     `<TextResourceEditModal>`.
+ *   - `open-in-editor` — Open Copy in Editor clicked. The parent
+ *     routes through `useTabsStore().goToEditor()` so the Editor
+ *     tab pre-fills with a copy (the original is untouched).
+ *   - `render-example` — Render clicked (examples only). Kept as
+ *     a no-op telemetry signal — the parent doesn't need to act.
  */
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useResourceStore } from '../stores/resources'
 import { useResourceCardList } from '../composables/useResourceCardList'
+import ResourceOverlay from './ResourceOverlay.vue'
 
 const props = defineProps<{
     kind: ResourceKind
@@ -61,16 +68,13 @@ const emit = defineEmits<{
 
 const store = useResourceStore()
 const {
-    openNames,
     sourceByName,
-    highlightedByName,
     loadingName,
     loadError,
     principalItems,
     skillItems,
     hasItems,
     formatBytes,
-    onToggle,
     ensureSource,
     confirmAndDelete,
     renderingName,
@@ -79,102 +83,76 @@ const {
     renderExample,
 } = useResourceCardList(props.kind)
 
-function snippetFor(name: string): string {
-    return props.kind === 'template'
-        ? `#import "templates/${name}"`
-        : `#include "examples/${name}"`
-}
+// The currently-open overlay's resource name. Null when no
+// overlay is showing. The composable's source + render caches
+// are keyed by name, so opening is a one-step lookup.
+const openName = ref<string | null>(null)
 
-async function copyToClipboard(text: string): Promise<boolean> {
-    try {
-        await navigator.clipboard.writeText(text)
-        return true
-    } catch {
-        // Non-HTTPS contexts (e.g. local dev without TLS) block
-        // `navigator.clipboard`. Fall back to a hidden textarea +
-        // `execCommand('copy')` so the affordance still works.
-        const textarea = document.createElement('textarea')
-        textarea.value = text
-        textarea.style.position = 'fixed'
-        textarea.style.opacity = '0'
-        document.body.appendChild(textarea)
-        textarea.select()
-        try {
-            return document.execCommand('copy')
-        } catch {
-            return false
-        } finally {
-            textarea.remove()
-        }
-    }
-}
+const openItem = computed(() => {
+    const name = openName.value
+    if (name === null) return null
+    return principalItems.value.find((t) => t.name === name)
+        ?? skillItems.value.find((t) => t.name === name)
+        ?? null
+})
 
-const copiedName = ref<string | null>(null)
-const copyError = ref<string | null>(null)
-
-async function copySnippet(name: string): Promise<void> {
-    copyError.value = null
-    const ok = await copyToClipboard(snippetFor(name))
-    if (ok) {
-        copiedName.value = name
-        setTimeout(() => {
-            if (copiedName.value === name) copiedName.value = null
-        }, 1500)
-    } else {
-        copyError.value = name
-    }
-}
-
-/**
- * Open the edit modal for a resource. The modal's `initialContent`
- * drives the textarea — if we hand it an empty string because the
- * operator hadn't expanded the card yet, they see a blank editor
- * and may Save over their file with empty bytes. `ensureSource`
- * lazy-fetches the source the first time the card is opened; we
- * call it explicitly here so the modal opens with the real content.
- */
-async function onEdit(name: string): Promise<void> {
+async function openOverlay(name: string): Promise<void> {
+    openName.value = name
+    // Eager-fetch so the modal opens with the source visible
+    // rather than a loading flash. `ensureSource` short-circuits
+    // when the cache is warm.
     await ensureSource(name)
+}
+
+function closeOverlay(): void {
+    openName.value = null
+}
+
+// When the open resource gets deleted (via the overlay's Delete
+// action), the overlay would otherwise linger pointing at a name
+// no longer in the listing. Watch the items list and close.
+watch([principalItems, skillItems], () => {
+    const name = openName.value
+    if (name === null) return
+    const stillThere =
+        principalItems.value.some((t) => t.name === name)
+        || skillItems.value.some((t) => t.name === name)
+    if (!stillThere) openName.value = null
+})
+
+function onEdit(): void {
+    const name = openName.value
+    if (name === null) return
     const content = sourceByName.value[name] ?? ''
     emit('edit', { name, kind: props.kind, content })
 }
 
-async function onRenderExample(name: string): Promise<void> {
-    // The preview bridge needs the source bytes; ensure they're
-    // loaded (the composable's cache short-circuits re-opens).
-    if (sourceByName.value[name] === undefined) {
-        await ensureSource(name)
-    }
-    const content = sourceByName.value[name]
-    if (content === undefined) return
-    emit('render-example', { name })
-    await renderExample(name, content)
-}
-
-/**
- * Open the Editor tab with this resource's source pre-filled as a
- * copy. The `-copy.typ` filename signals a new origin so the
- * operator doesn't accidentally overwrite the original on Save.
- * The parent (TypstPage) routes this through
- * `useTabsStore().goToEditor()` so the Editor can consume the
- * prefill on its next mount.
- */
-async function onOpenInEditor(name: string): Promise<void> {
-    if (sourceByName.value[name] === undefined) {
-        await ensureSource(name)
-    }
-    const content = sourceByName.value[name]
-    if (content === undefined) return
-    // Strip the `.typ` extension; the Editor's filename field is
-    // a stem, not a full basename. The `-copy` suffix signals the
-    // new origin so the operator doesn't accidentally overwrite
-    // the original example on Save.
+function onOpenInEditor(): void {
+    const name = openName.value
+    if (name === null) return
+    const content = sourceByName.value[name] ?? ''
+    if (content === '') return
     const stem = name.replace(/\.typ$/, '')
     emit('open-in-editor', {
         name,
         content,
         filename: `${stem}-copy.typ`,
     })
+}
+
+function onRender(): void {
+    const name = openName.value
+    if (name === null) return
+    const content = sourceByName.value[name] ?? ''
+    if (content === '') return
+    emit('render-example', { name })
+    void renderExample(name, content)
+}
+
+async function onDelete(): Promise<void> {
+    const name = openName.value
+    if (name === null) return
+    await confirmAndDelete(name)
 }
 </script>
 
@@ -196,115 +174,19 @@ async function onOpenInEditor(name: string): Promise<void> {
                 <article
                     v-for="item in principalItems"
                     :key="item.name"
-                    :class="[
-                        'rounded-lg border border-border bg-card p-4 space-y-2',
-                        openNames.has(item.name) ? 'md:col-span-2' : '',
-                    ]"
+                    class="rounded-lg border border-border bg-card p-4 cursor-pointer hover:border-primary transition-colors space-y-1"
+                    role="button"
+                    tabindex="0"
+                    :aria-label="`Open ${kind} ${item.name}`"
+                    :data-testid="`resource-card-${item.name}`"
+                    @click="openOverlay(item.name)"
+                    @keydown.enter="openOverlay(item.name)"
+                    @keydown.space.prevent="openOverlay(item.name)"
                 >
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                            <div class="font-mono text-sm text-foreground truncate">{{ item.name }}</div>
-                            <div class="text-xs text-muted-foreground mt-0.5">
-                                {{ formatBytes(item.size) }}
-                                · <span class="text-muted-foreground/70">Your upload</span>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2 shrink-0">
-                            <button
-                                type="button"
-                                class="text-xs font-medium text-primary hover:text-primary/80 disabled:opacity-40"
-                                :disabled="store.uploading"
-                                @click="onEdit(item.name)"
-                            >Edit</button>
-                            <button
-                                v-if="props.kind === 'template'"
-                                type="button"
-                                class="text-xs font-medium text-primary hover:text-primary/80 disabled:opacity-40"
-                                :disabled="store.uploading"
-                                @click="onOpenInEditor(item.name)"
-                            >Open Copy in Editor</button>
-                            <button
-                                type="button"
-                                class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
-                                :disabled="store.uploading"
-                                @click="confirmAndDelete(item.name)"
-                            >Delete</button>
-                        </div>
-                    </div>
-                    <details
-                        class="text-xs"
-                        @toggle="onToggle(item.name, $event)"
-                    >
-                        <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
-                        <div v-if="openNames.has(item.name)" class="mt-2">
-                            <div
-                                v-if="loadingName === item.name"
-                                class="p-2 text-muted-foreground"
-                            >Loading…</div>
-                            <div
-                                v-else-if="loadError !== null"
-                                class="p-2 text-destructive"
-                            >{{ loadError }}</div>
-                            <pre
-                                v-else-if="highlightedByName[item.name] !== undefined"
-                                class="p-3 bg-muted rounded text-xs overflow-x-auto max-h-[32rem] overflow-y-auto"
-                            ><code class="hljs language-typst" v-html="highlightedByName[item.name]"></code></pre>
-                        </div>
-                    </details>
-                    <div class="flex items-center gap-2 pt-1">
-                        <span class="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">Use in Typst</span>
-                        <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground truncate inline-block min-w-0 flex-1">{{ snippetFor(item.name) }}</code>
-                        <button
-                            type="button"
-                            :class="[
-                                'shrink-0 rounded px-2 py-0.5 text-xs font-medium transition-colors',
-                                copiedName === item.name
-                                    ? 'bg-primary/10 text-primary'
-                                    : copyError === item.name
-                                        ? 'bg-destructive/10 text-destructive'
-                                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                            ]"
-                            :aria-label="`Copy Typst snippet for ${item.name}`"
-                            @click="copySnippet(item.name)"
-                        >{{ copiedName === item.name ? 'Copied' : 'Copy' }}</button>
-                    </div>
-                    <div
-                        v-if="props.kind === 'example'"
-                        class="flex items-center gap-2 pt-1"
-                    >
-                        <button
-                            type="button"
-                            class="rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
-                            :disabled="renderingName === item.name"
-                            @click="onRenderExample(item.name)"
-                        >{{ renderingName === item.name ? 'Rendering…' : 'Render' }}</button>
-                            <button
-                                type="button"
-                                class="rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
-                                @click="onOpenInEditor(item.name)"
-                            >Open Copy in Editor</button>
-                    </div>
-                    <div
-                        v-if="props.kind === 'example' && renderError !== null"
-                        class="text-xs text-destructive"
-                    >{{ renderError }}</div>
-                    <div
-                        v-if="props.kind === 'example' && renderedByName[item.name] !== undefined"
-                        class="pt-2 border-t border-border"
-                    >
-                        <img
-                            v-if="renderedByName[item.name].format === 'png' || renderedByName[item.name].format === 'svg'"
-                            :src="renderedByName[item.name].blobUrl"
-                            :alt="item.name"
-                            class="max-h-32 mx-auto"
-                        >
-                        <a
-                            v-else-if="renderedByName[item.name].format === 'pdf'"
-                            :href="renderedByName[item.name].blobUrl"
-                            target="_blank"
-                            rel="noopener"
-                            class="text-xs font-medium text-primary hover:text-primary/80"
-                        >Open PDF</a>
+                    <div class="font-mono text-sm text-foreground truncate">{{ item.name }}</div>
+                    <div class="text-xs text-muted-foreground">
+                        {{ formatBytes(item.size) }}
+                        · <span class="text-muted-foreground/70">Your upload</span>
                     </div>
                 </article>
             </div>
@@ -323,113 +205,48 @@ async function onOpenInEditor(name: string): Promise<void> {
                     <article
                         v-for="item in skillItems"
                         :key="item.name"
-                        :class="[
-                            'rounded-lg border border-border bg-muted/40 p-4 space-y-2',
-                            openNames.has(item.name) ? 'md:col-span-2' : '',
-                        ]"
+                        class="rounded-lg border border-border bg-muted/40 p-4 cursor-pointer hover:border-primary transition-colors space-y-1"
+                        role="button"
+                        tabindex="0"
+                        :aria-label="`Open ${kind} ${item.name}`"
+                        :data-testid="`resource-card-${item.name}`"
+                        @click="openOverlay(item.name)"
+                        @keydown.enter="openOverlay(item.name)"
+                        @keydown.space.prevent="openOverlay(item.name)"
                     >
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="min-w-0">
-                                <div class="font-mono text-sm text-foreground truncate">{{ item.name }}</div>
-                                <div class="text-xs text-muted-foreground mt-0.5">
-                                    {{ formatBytes(item.size) }}
-                                    · <span class="inline-flex items-center gap-1 text-muted-foreground/70">
-                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                                            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                                        </svg>
-                                        Built-in
-                                    </span>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2 shrink-0">
-                                <button
-                                    v-if="props.kind === 'template'"
-                                    type="button"
-                                    class="text-xs font-medium text-primary hover:text-primary/80"
-                                    @click="onOpenInEditor(item.name)"
-                                >Open Copy in Editor</button>
-                                <span class="text-xs text-muted-foreground/70">Read-only</span>
-                            </div>
-                        </div>
-                        <details
-                            class="text-xs"
-                            @toggle="onToggle(item.name, $event)"
-                        >
-                            <summary class="cursor-pointer text-primary hover:text-primary/80 select-none">View source</summary>
-                            <div v-if="openNames.has(item.name)" class="mt-2">
-                                <div
-                                    v-if="loadingName === item.name"
-                                    class="p-2 text-muted-foreground"
-                                >Loading…</div>
-                                <div
-                                    v-else-if="loadError !== null"
-                                    class="p-2 text-destructive"
-                                >{{ loadError }}</div>
-                                <pre
-                                    v-else-if="highlightedByName[item.name] !== undefined"
-                                    class="p-3 bg-background rounded text-xs overflow-x-auto max-h-[32rem] overflow-y-auto"
-                                ><code class="hljs language-typst" v-html="highlightedByName[item.name]"></code></pre>
-                            </div>
-                        </details>
-                        <div class="flex items-center gap-2 pt-1">
-                            <span class="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">Use in Typst</span>
-                            <code class="rounded bg-background px-1.5 py-0.5 font-mono text-xs text-foreground truncate inline-block min-w-0 flex-1">{{ snippetFor(item.name) }}</code>
-                            <button
-                                type="button"
-                                :class="[
-                                    'shrink-0 rounded px-2 py-0.5 text-xs font-medium transition-colors',
-                                    copiedName === item.name
-                                        ? 'bg-primary/10 text-primary'
-                                        : copyError === item.name
-                                            ? 'bg-destructive/10 text-destructive'
-                                            : 'text-muted-foreground hover:bg-background hover:text-foreground',
-                                ]"
-                                :aria-label="`Copy Typst snippet for ${item.name}`"
-                                @click="copySnippet(item.name)"
-                            >{{ copiedName === item.name ? 'Copied' : 'Copy' }}</button>
-                        </div>
-                        <div
-                            v-if="props.kind === 'example'"
-                            class="flex items-center gap-2 pt-1"
-                        >
-                            <button
-                                type="button"
-                                class="rounded border border-border bg-card px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40"
-                                :disabled="renderingName === item.name"
-                                @click="onRenderExample(item.name)"
-                            >{{ renderingName === item.name ? 'Rendering…' : 'Render' }}</button>
-                            <button
-                                type="button"
-                                class="rounded border border-border bg-card px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
-                                @click="onOpenInEditor(item.name)"
-                            >Open Copy in Editor</button>
-                        </div>
-                        <div
-                            v-if="props.kind === 'example' && renderError !== null"
-                            class="text-xs text-destructive"
-                        >{{ renderError }}</div>
-                        <div
-                            v-if="props.kind === 'example' && renderedByName[item.name] !== undefined"
-                            class="pt-2 border-t border-border"
-                        >
-                            <img
-                                v-if="renderedByName[item.name].format === 'png' || renderedByName[item.name].format === 'svg'"
-                                :src="renderedByName[item.name].blobUrl"
-                                :alt="item.name"
-                                class="max-h-32 mx-auto"
-                            >
-                            <a
-                                v-else-if="renderedByName[item.name].format === 'pdf'"
-                                :href="renderedByName[item.name].blobUrl"
-                                target="_blank"
-                                rel="noopener"
-                                class="text-xs font-medium text-primary hover:text-primary/80"
-                            >Open PDF</a>
+                        <div class="font-mono text-sm text-foreground truncate">{{ item.name }}</div>
+                        <div class="text-xs text-muted-foreground">
+                            {{ formatBytes(item.size) }}
+                            · <span class="inline-flex items-center gap-1 text-muted-foreground/70">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                </svg>
+                                Built-in
+                            </span>
                         </div>
                     </article>
                 </div>
             </div>
         </template>
+
+        <ResourceOverlay
+            v-if="openName !== null && openItem !== null"
+            :open="true"
+            :kind="props.kind"
+            :name="openName"
+            :content="sourceByName[openName] ?? ''"
+            :origin="openItem.origin"
+            :rendered="renderedByName[openName] ?? null"
+            :rendering="renderingName === openName"
+            :render-error="renderingName === openName ? renderError : null"
+            :loading="loadingName === openName"
+            :load-error="loadingName === openName ? loadError : null"
+            @close="closeOverlay"
+            @edit="onEdit"
+            @open-in-editor="onOpenInEditor"
+            @render="onRender"
+            @delete="onDelete"
+        />
     </div>
 </template>
