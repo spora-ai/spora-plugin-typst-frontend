@@ -341,4 +341,44 @@ describe('SourceEditor.vue', () => {
         expect(updates![0]![0]).toBe('= foo')
         wrapper.unmount()
     })
+
+    it('getHeadingLevelAtCaret returns null for a plain line', () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'foo bar' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(2, 2)
+        const exposed = wrapper.vm as unknown as { getHeadingLevelAtCaret?: () => number | null }
+        expect(exposed.getHeadingLevelAtCaret?.()).toBeNull()
+        wrapper.unmount()
+    })
+
+    it('getHeadingLevelAtCaret returns the level of the caret line', () => {
+        const wrapper = mount(SourceEditor, {
+            props: { modelValue: 'foo\n== bar\nbaz' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        // Caret in the middle of "== bar" (position 7, on the 'b').
+        textarea.setSelectionRange(7, 7)
+        const exposed = wrapper.vm as unknown as { getHeadingLevelAtCaret?: () => number | null }
+        expect(exposed.getHeadingLevelAtCaret?.()).toBe(2)
+        wrapper.unmount()
+    })
+
+    it('getHeadingLevelAtCaret caps the level at 5 (Typst has five)', () => {
+        const wrapper = mount(SourceEditor, {
+            // 7 equals signs — Typst still treats this as level 5,
+            // extra equals are content. The toolbar should mirror
+            // that, not expose a level-7 indicator.
+            props: { modelValue: '======= foo' },
+            attachTo: document.body,
+        })
+        const textarea = wrapper.find<HTMLTextAreaElement>('textarea').element
+        textarea.setSelectionRange(8, 8)
+        const exposed = wrapper.vm as unknown as { getHeadingLevelAtCaret?: () => number | null }
+        expect(exposed.getHeadingLevelAtCaret?.()).toBe(5)
+        wrapper.unmount()
+    })
 })

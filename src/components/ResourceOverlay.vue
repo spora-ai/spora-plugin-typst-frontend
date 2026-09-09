@@ -45,8 +45,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useResourceStore } from '../stores/resources'
 import SourceEditor from './SourceEditor.vue'
-import type { ResourceKind } from '../composables/useResourceCardList'
-import type { RenderedPreview } from '../composables/useResourceCardList'
+import type { ResourceKind, RenderedPreview } from '../composables/useResourceCardList'
 
 const props = withDefaults(defineProps<{
     open: boolean

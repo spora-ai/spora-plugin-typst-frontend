@@ -72,6 +72,7 @@ import { ApiError } from '../api/client'
 import { previewTypst, type PreviewResult } from '../api/preview'
 import { listImages } from '../api/images'
 import { listMediaArchiveImages } from '../api/media-archive'
+import { listTemplates } from '../api/templates'
 import { usePrincipalsStore } from '../stores/principals'
 import { useResourceStore } from '../stores/resources'
 import { useSourcesStore, type SourcesKindFilter } from '../stores/sources'
@@ -221,12 +222,29 @@ async function loadPickerImages(): Promise<void> {
     pickerLoading.value = true
     try {
         const principalId = principalsStore.selectedPrincipalId ?? undefined
-        const [plugin, media] = await Promise.all([
-            listImages(principalId).catch(() => []),
-            listMediaArchiveImages(principalId).catch(() => []),
+        // Both lists in parallel — surface the first failure via
+        // the shared `error` ref so the AlertBanner picks it up.
+        // Previously both calls used `.catch(() => [])` which made
+        // a 5xx look identical to "no images uploaded" to the
+        // operator — they'd click the picker open, see the empty
+        // state, and assume they needed to upload.
+        const results = await Promise.allSettled([
+            listImages(principalId),
+            listMediaArchiveImages(principalId),
         ])
-        pluginImages.value = plugin
-        mediaImages.value = media
+        const [plugin, media] = results
+        if (plugin.status === 'fulfilled') {
+            pluginImages.value = plugin.value
+        } else {
+            pluginImages.value = []
+            error.value = `Could not load plugin images: ${plugin.reason instanceof Error ? plugin.reason.message : String(plugin.reason)}`
+        }
+        if (media.status === 'fulfilled') {
+            mediaImages.value = media.value
+        } else {
+            mediaImages.value = []
+            error.value = `Could not load media archive: ${media.reason instanceof Error ? media.reason.message : String(media.reason)}`
+        }
     } finally {
         pickerLoading.value = false
     }
@@ -236,9 +254,9 @@ async function loadTemplatePickerTemplates(): Promise<void> {
     templatePickerLoading.value = true
     try {
         const principalId = principalsStore.selectedPrincipalId ?? undefined
-        templates.value = await resourcesStore.templates.length > 0
+        templates.value = resourcesStore.templates.length > 0
             ? resourcesStore.templates
-            : await import('../api/templates').then((m) => m.listTemplates(principalId ?? undefined))
+            : await listTemplates(principalId ?? undefined)
     } catch {
         templates.value = []
     } finally {
@@ -385,7 +403,9 @@ function base64ToBlob(base64: string, mime: string): Blob {
     const bytes = atob(base64)
     const arr = new Uint8Array(bytes.length)
     for (let i = 0; i < bytes.length; i++) {
-        arr[i] = bytes.charCodeAt(i)
+        // codePointAt (not charCodeAt) so multi-byte UTF-8 sequences
+        // decoded from base64 round-trip correctly. Sonar S7758.
+        arr[i] = bytes.codePointAt(i) ?? 0
     }
     return new Blob([arr], { type: mime })
 }

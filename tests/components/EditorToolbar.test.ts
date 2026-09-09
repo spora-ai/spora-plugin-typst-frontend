@@ -20,16 +20,24 @@ import EditorToolbar from '../../src/components/EditorToolbar.vue'
 
 interface StubEditor {
     getSelection: () => string | null
+    getHeadingLevelAtCaret: () => number | null
     insertAtCaret: (text: string) => void
     insertAtLineStart: (text: string) => void
     applyHeadingAtCaret: (level: number) => void
     focus: (opts?: { preventScroll?: boolean }) => void
-    textarea: { selectionStart: number | null; setSelectionRange: (start: number, end: number) => void; focus: () => void } | null
+    textarea: {
+        selectionStart: number | null
+        setSelectionRange: (start: number, end: number) => void
+        focus: () => void
+        addEventListener: (event: string, handler: (e: Event) => void) => void
+        removeEventListener: (event: string, handler: (e: Event) => void) => void
+    } | null
 }
 
 function makeStub(initialSelection: string | null): { editorRef: StubEditor | null, stub: StubEditor } {
     const stub: StubEditor = {
         getSelection: vi.fn(() => initialSelection),
+        getHeadingLevelAtCaret: vi.fn(() => null),
         insertAtCaret: vi.fn(),
         insertAtLineStart: vi.fn(),
         applyHeadingAtCaret: vi.fn(),
@@ -38,6 +46,8 @@ function makeStub(initialSelection: string | null): { editorRef: StubEditor | nu
             selectionStart: 0,
             setSelectionRange: vi.fn(),
             focus: vi.fn(),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
         },
     }
     return { editorRef: stub, stub }

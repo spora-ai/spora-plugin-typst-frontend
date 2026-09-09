@@ -67,16 +67,30 @@ function toggle(): void {
     })
 }
 
+/**
+ * Esc / outside-click close. Returns focus to the trigger so
+ * keyboard users land somewhere predictable when they bail out
+ * of the popover without picking. (Split from `pick()`, which
+ * keeps focus on the textarea — see below.)
+ */
 function close(): void {
     open.value = false
-    // Return focus to the trigger so keyboard users land somewhere
-        // sensible when they Esc out of the popover.
     triggerRef.value?.focus()
 }
 
+/**
+ * Picking a level must NOT refocus the trigger — the toolbar's
+ * `editor.focus()` call (after `applyHeadingAtCaret`) already
+ * lands focus on the textarea, and the toolbar's rAF restores
+ * the caret position there too. Refocusing the trigger would
+ * cause a visible focus flicker between trigger and textarea
+ * on every heading pick — and if `applyHeadingAtCaret` early-
+ * returns on a null textarea, the operator's next keystroke
+ * would land on the toolbar button instead of the source.
+ */
 function pick(level: number): void {
     emit('insert', level)
-    close()
+    open.value = false
 }
 
 function onDocumentMouseDown(e: MouseEvent): void {
@@ -85,7 +99,12 @@ function onDocumentMouseDown(e: MouseEvent): void {
     if (target === null) return
     if (triggerRef.value?.contains(target)) return
     if (popoverRef.value?.contains(target)) return
-    close()
+    // Outside-click closes the popover without re-focusing the
+    // trigger — the operator clicked somewhere else specifically
+    // to move focus there; yanking it back discards that intent.
+    // (The Esc path is the only one that returns focus — keyboard
+    // users need the predictable landing spot.)
+    open.value = false
 }
 
 function onKey(e: KeyboardEvent): void {

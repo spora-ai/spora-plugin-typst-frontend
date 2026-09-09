@@ -52,6 +52,11 @@
  *     followed by a space. The caret stays anchored at the
  *     same content offset (e.g. column 3 of "foo" stays at the
  *     'o' even after wrapping with `= = foo`).
+ *   - `getHeadingLevelAtCaret()` — return the heading level (1–5)
+ *     of the caret's current line, or `null` if the line has no
+ *     heading marker. Drives the HeadingMenu trigger label
+ *     ("Heading" vs "H<n>") and the active-level highlight in
+ *     the popover.
  *   - `replaceSelection(text)` — write `text` over the current
  *     selection (or insert at caret if no selection). Used by the
  *     formatting tools when wrapping selected text in `*…*`,
@@ -267,6 +272,35 @@ function applyHeadingAtCaret(level: number): void {
     })
 }
 
+/**
+ * Return the heading level of the caret's current line, or
+ * `null` if no marker. Pure read — doesn't move the caret or
+ * emit any update.
+ *
+ * Detection mirrors `applyHeadingAtCaret`'s heading regex:
+ * the line must start with `=` repeated 1+ times followed by
+ * a single whitespace char (Typst's heading grammar — bare
+ * `=` without a trailing space is literal markup, not a
+ * heading). The level is capped at 5 because Typst only has
+ * five heading levels.
+ */
+function getHeadingLevelAtCaret(): number | null {
+    const ta = textareaRef.value
+    if (ta === null) return null
+    const source = props.modelValue
+    const caret = ta.selectionStart ?? 0
+    let lineStart = caret
+    while (lineStart > 0 && source[lineStart - 1] !== '\n') {
+        lineStart--
+    }
+    let lineEnd = source.indexOf('\n', lineStart)
+    if (lineEnd === -1) lineEnd = source.length
+    const line = source.slice(lineStart, lineEnd)
+    const match = line.match(/^(=+)(\s)/)
+    if (match === null) return null
+    return Math.min(match[1].length, 5)
+}
+
 defineExpose({
     focus: (opts?: { preventScroll?: boolean }) => {
         textareaRef.value?.focus(opts)
@@ -275,6 +309,7 @@ defineExpose({
     insertAtCaret,
     insertAtLineStart,
     applyHeadingAtCaret,
+    getHeadingLevelAtCaret,
     replaceSelection,
     getSelection,
 })

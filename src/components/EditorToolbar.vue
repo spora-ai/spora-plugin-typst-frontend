@@ -31,7 +31,7 @@
  *
  * No keyboard shortcuts in this commit — those are a follow-up.
  */
-import { ref } from 'vue'
+import { ref, watchEffect } from 'vue'
 import {
     FORMATTING_TOOLS,
     applyTool,
@@ -45,16 +45,28 @@ import LinkInsertDialog from './LinkInsertDialog.vue'
  * Structural interface for the editor surface the toolbar drives.
  * Defined inline (rather than importing `InstanceType<typeof
  * SourceEditor>`) so tests can stub the editor without dragging in
- * the full SourceEditor typing — the toolbar only needs three
- * methods + the textarea ref, all of which are easy to fake.
+ * the full SourceEditor typing — the toolbar only needs a handful
+ * of methods + the textarea ref, all of which are easy to fake.
+ *
+ * The `textarea` shape carries the DOM event listeners the
+ * toolbar subscribes to (input + select) — keeps the
+ * EditorSurface contract honest about what the toolbar reaches
+ * into on the textarea.
  */
 export interface EditorSurface {
     getSelection: () => string | null
+    getHeadingLevelAtCaret: () => number | null
     insertAtCaret: (text: string) => void
     insertAtLineStart: (text: string) => void
     applyHeadingAtCaret: (level: number) => void
     focus: (opts?: { preventScroll?: boolean }) => void
-    textarea: { selectionStart: number | null; setSelectionRange: (start: number, end: number) => void; focus: () => void } | null
+    textarea: {
+        selectionStart: number | null
+        setSelectionRange: (start: number, end: number) => void
+        focus: () => void
+        addEventListener: (event: string, handler: (e: Event) => void) => void
+        removeEventListener: (event: string, handler: (e: Event) => void) => void
+    } | null
 }
 
 const props = defineProps<{
@@ -73,6 +85,24 @@ const props = defineProps<{
 const showLinkDialog = ref(false)
 const linkInitialUrl = ref('')
 const linkInitialLabel = ref('')
+
+/**
+ * Live heading level for the caret's current line, recomputed
+ * every time the source changes (via a manual subscription on
+ * the editor's v-model). `null` when the line has no marker.
+ * Drives the HeadingMenu trigger label ("Heading" vs "H<n>")
+ * and the active-level highlight in the popover.
+ */
+const liveHeadingLevel = ref<number | null>(null)
+
+function refreshCurrentLevel(): void {
+    const editor = props.editorRef
+    if (editor === null) {
+        liveHeadingLevel.value = null
+        return
+    }
+    liveHeadingLevel.value = editor.getHeadingLevelAtCaret()
+}
 
 function onToolClick(tool: ToolbarTool): void {
     const editor = props.editorRef
@@ -118,7 +148,37 @@ function onHeadingInsert(level: number): void {
     if (editor === null) return
     editor.applyHeadingAtCaret(level)
     editor.focus({ preventScroll: true })
+    // HeadingMenu's trigger label / active highlight reflect
+    // the new level — re-read it from the editor now that the
+    // buffer has changed.
+    refreshCurrentLevel()
 }
+
+/**
+ * Keep `currentLevel` in sync with the editor's caret + buffer
+ * state. Re-runs whenever the editor ref swaps (e.g. the
+ * SourceEditor remounts) and binds to the textarea's `input`
+ * (typing) + `select` (caret move) events so manual edits +
+ * caret navigation both trigger a refresh.
+ */
+watchEffect((onCleanup) => {
+    const ta = props.editorRef?.textarea
+    if (ta === null) return
+    // Non-null assertion is safe — the early return above
+    // already narrowed the optional chain. TS doesn't carry
+    // the narrowing across subsequent property accesses on
+    // a reactive prop, so the assertion is needed to make
+    // the closure handlers below type-check.
+    const ta2 = ta!
+    const handler = (): void => refreshCurrentLevel()
+    refreshCurrentLevel()
+    ta2.addEventListener('input', handler)
+    ta2.addEventListener('select', handler)
+    onCleanup(() => {
+        ta2.removeEventListener('input', handler)
+        ta2.removeEventListener('select', handler)
+    })
+})
 
 function onLinkConfirm(payload: { url: string; label: string }): void {
     const editor = props.editorRef
@@ -145,7 +205,7 @@ function onLinkCancel(): void {
         aria-label="Editor formatting tools"
     >
         <HeadingMenu
-            :current-level="currentLevel"
+            :current-level="liveHeadingLevel"
             :disabled="busy"
             @insert="onHeadingInsert"
         />

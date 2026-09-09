@@ -149,4 +149,35 @@ describe('HeadingMenu.vue', () => {
         expect((trigger.element as HTMLButtonElement).disabled).toBe(true)
         wrapper.unmount()
     })
+
+    it('picking a level does NOT refocus the trigger (so the toolbar can refocus the textarea)', async () => {
+        // The toolbar refocuses the textarea after applyHeadingAtCaret
+        // — picking must not pull focus back to the trigger or the
+        // operator sees a flicker between trigger and textarea on
+        // every heading pick. (Esc / outside-click DO refocus the
+        // trigger because keyboard / mouse users explicitly closed
+        // the popover without acting.)
+        const focusSpy = vi.fn()
+        const trigger = document.createElement('button')
+        trigger.focus = focusSpy
+        document.body.appendChild(trigger)
+
+        const wrapper = mount(HeadingMenu, {
+            props: { currentLevel: null },
+            attachTo: trigger,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="editor-tool-heading"]').trigger('click')
+        await flushPromises()
+        await wrapper.find('[data-testid="heading-level-2"]').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.emitted('insert')![0]![0]).toBe(2)
+        // The trigger must NOT have received a focus() call from
+        // the pick path.
+        expect(focusSpy).not.toHaveBeenCalled()
+        wrapper.unmount()
+        trigger.remove()
+    })
 })

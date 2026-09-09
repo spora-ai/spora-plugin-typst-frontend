@@ -1,6 +1,5 @@
 import { computed, onMounted, ref } from 'vue'
 import { ApiError } from '../api/client'
-import type { PreviewResult } from '../api/preview'
 import { getExample } from '../api/examples'
 import { getTemplate } from '../api/templates'
 import { useResourceStore } from '../stores/resources'
@@ -14,10 +13,11 @@ export interface ResourceSummary {
 }
 
 /**
- * One rendered preview cache entry. `format` mirrors the API
- * envelope's union (`'pdf' | 'png' | 'svg'`) so the template's
- * `format === 'png'` / `'svg'` / `'pdf'` branch narrows without
- * a cast.
+ * One rendered preview cache entry — the decoded Blob URL form
+ * of {@see stores/resources.RenderExampleResult}. `format` mirrors
+ * the API envelope's union (`'pdf' | 'png' | 'svg'`) so the
+ * template's `format === 'png'` / `'svg'` / `'pdf'` branch
+ * narrows without a cast.
  */
 export interface RenderedPreview {
     blobUrl: string
@@ -52,7 +52,10 @@ function base64ToBlob(base64: string, mime: string): Blob {
     const bytes = atob(base64)
     const arr = new Uint8Array(bytes.length)
     for (let i = 0; i < bytes.length; i++) {
-        arr[i] = bytes.charCodeAt(i)
+        // codePointAt (not charCodeAt) so multi-byte UTF-8 sequences
+        // decoded from base64 round-trip correctly when the
+        // preview payload contains non-ASCII bytes. Sonar S7758.
+        arr[i] = bytes.codePointAt(i) ?? 0
     }
     return new Blob([arr], { type: mime })
 }
@@ -121,15 +124,18 @@ export function useResourceCardList(kind: ResourceKind) {
         renderError.value = null
         try {
             // The store's `renderExample` bridge hits `/typst/preview`
-            // and returns a `PreviewResult` (base64 bytes + mime +
-            // format + dims). The store-level indirection keeps the
-            // composable out of the api/* module graph so the
-            // components can render without dragging the network
-            // client in.
-            const preview = (store as unknown as {
-                renderExample: (n: string, c: string, f: 'pdf' | 'png' | 'svg', p: number) => Promise<PreviewResult>
-            })
-            const result = await preview.renderExample(name, content, 'png', 144)
+            // and returns the decoded `RenderExampleResult` (which
+            // is now an alias for `PreviewResult` so the shape
+            // stays in sync automatically — see
+            // `src/stores/resources.ts`). The store-level
+            // indirection keeps the composable out of the api/*
+            // module graph so the components can render without
+            // dragging the network client in.
+            const result = await store.renderExample(name, content, 'png', 144)
+            if (result === null) {
+                renderError.value = store.error ?? 'failed to render example'
+                return
+            }
             const blob = base64ToBlob(result.bytes, result.mime)
             const blobUrl = URL.createObjectURL(blob)
             // Replace any previous render for this name so the

@@ -39,13 +39,24 @@ export interface SavedEventPayload {
  * Render / Delete actions, and the cached render thumbnail.
  * The card no longer carries inline `<details>` expansion +
  * per-card action buttons — every action lives in the overlay
- * so the card grid stays uniform.
+ * so the card grid stays uniform. Cards are rendered as native
+ * `<button>` elements (Sonar Web:S6819/S6842 — non-interactive
+ * elements must not be assigned the `button` role) so keyboard
+ * activation + focus styling come for free.
  *
  * The overlay is rendered inside this component (not the parent)
  * because its source + render cache live in
  * `useResourceCardList` and would otherwise need to be lifted to
  * the parent. Owning the overlay here keeps the cache locality
  * clean and the parent free of resource-specific state.
+ *
+ * Props:
+ *   - `kind`: 'template' | 'example' — drives the snippet shape
+ *     (`#import "templates/X.typ"` vs `#include "examples/X.typ"`)
+ *     and the example-only Render button.
+ *   - `emptyText`: shown when no items match.
+ *   - `builtInHeadingText`: divider label between principal and
+ *     skill sections.
  *
  * Events bubbling up:
  *   - `open-in-editor` — Open Copy in Editor clicked. The
@@ -185,24 +196,21 @@ function onSaved(payload: { name: string; content: string }): void {
                 v-if="principalItems.length > 0"
                 class="grid grid-cols-1 md:grid-cols-2 gap-3"
             >
-                <article
+                <button
                     v-for="item in principalItems"
                     :key="item.name"
-                    class="rounded-lg border border-border bg-card p-4 cursor-pointer hover:border-primary transition-colors space-y-1"
-                    role="button"
-                    tabindex="0"
+                    type="button"
+                    class="block w-full text-left rounded-lg border border-border bg-card p-4 cursor-pointer hover:border-primary transition-colors space-y-1"
                     :aria-label="`Open ${kind} ${item.name}`"
                     :data-testid="`resource-card-${item.name}`"
                     @click="openOverlay(item.name)"
-                    @keydown.enter="openOverlay(item.name)"
-                    @keydown.space.prevent="openOverlay(item.name)"
                 >
                     <div class="font-mono text-sm text-foreground truncate">{{ item.name }}</div>
                     <div class="text-xs text-muted-foreground">
                         {{ formatBytes(item.size) }}
                         · <span class="text-muted-foreground/70">Your upload</span>
                     </div>
-                </article>
+                </button>
             </div>
             <div
                 v-if="skillItems.length > 0"
@@ -216,17 +224,14 @@ function onSaved(payload: { name: string; content: string }): void {
                     <span class="flex-1 border-t border-border" />
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <article
+                    <button
                         v-for="item in skillItems"
                         :key="item.name"
-                        class="rounded-lg border border-border bg-muted/40 p-4 cursor-pointer hover:border-primary transition-colors space-y-1"
-                        role="button"
-                        tabindex="0"
+                        type="button"
+                        class="block w-full text-left rounded-lg border border-border bg-muted/40 p-4 cursor-pointer hover:border-primary transition-colors space-y-1"
                         :aria-label="`Open ${kind} ${item.name}`"
                         :data-testid="`resource-card-${item.name}`"
                         @click="openOverlay(item.name)"
-                        @keydown.enter="openOverlay(item.name)"
-                        @keydown.space.prevent="openOverlay(item.name)"
                     >
                         <div class="font-mono text-sm text-foreground truncate">{{ item.name }}</div>
                         <div class="text-xs text-muted-foreground">
@@ -239,7 +244,7 @@ function onSaved(payload: { name: string; content: string }): void {
                                 Built-in
                             </span>
                         </div>
-                    </article>
+                    </button>
                 </div>
             </div>
         </template>

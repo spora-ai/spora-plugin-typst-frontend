@@ -22,28 +22,23 @@ import * as fontsApi from '../api/fonts'
 import * as templatesApi from '../api/templates'
 import * as examplesApi from '../api/examples'
 import * as previewApi from '../api/preview'
+import type { PreviewResult } from '../api/preview'
 import type { FontResource, TemplateResource, ExampleResource } from '../types'
 
 /**
  * Inline render result for the example-card "render preview"
- * action. Shape mirrors {@see ../api/preview.PreviewResult} but
- * inlined here so the store doesn't leak the API client's internal
- * type names into component imports.
+ * action. Aliased from the API client's wire type so the shape
+ * stays in sync — a field added on one side now shows up on the
+ * other automatically, and the composable's cast (which used to
+ * hide the type mismatch between store + client) goes away.
+ *
+ * Kept as a separate export name so existing imports keep working
+ * and the store doesn't leak the `preview` API client's path into
+ * component imports (`import { RenderExampleResult } from
+ * '../stores/resources'` reads better than reaching into the api
+ * module).
  */
-export interface RenderExampleResult {
-    /** Base64-encoded bytes of the rendered file (PDF / PNG / SVG). */
-    bytes: string
-    /** MIME type — `application/pdf`, `image/png`, or `image/svg+xml`. */
-    mime: string
-    /** Format label — `pdf`, `png`, or `svg`. */
-    format: 'pdf' | 'png' | 'svg'
-    /** Echoed back so the result panel can show the source's filename. */
-    source_name: string
-    /** Pixel width for PNG; null for PDF/SVG. */
-    width: number | null
-    /** Pixel height for PNG; null for PDF/SVG. */
-    height: number | null
-}
+export type { PreviewResult as RenderExampleResult } from '../api/preview'
 
 export const useResourceStore = defineStore('typst-resources', () => {
     const fonts = ref<FontResource[]>([])
@@ -212,7 +207,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         content: string,
         format: 'pdf' | 'png' | 'svg' = 'png',
         ppi?: number,
-    ): Promise<RenderExampleResult | null> {
+    ): Promise<PreviewResult | null> {
         error.value = null
         try {
             return await previewApi.previewTypst({ source: content, name, format, ppi })
