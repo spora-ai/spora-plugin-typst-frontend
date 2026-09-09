@@ -1,12 +1,17 @@
 /**
  * Tests for the resource-card-list composable that backs the
  * Templates and Examples cards (and the `<ResourceCardList>`
- * wrapper component). The composable mirrors the browser-native
- * `<details>` open state into a `Set<string>` instead of binding
- * `:open` — that decoupling is the whole reason the bug fix in
- * PR #2 stops the two-card flicker. The tests below pin down
- * the contract: open-state mirroring, first-only fetch, cache
- * cleanup on delete, and the per-kind API plumbing.
+ * wrapper component).
+ *
+ * The composable's contract post-overlay-refactor:
+ *   - Source cache: ensureSource(name) lazy-fetches, short-circuits
+ *     on cache hit, surfaces loading + error flags.
+ *   - Render cache: renderExample(name, content) calls
+ *     `/preview` via the store and stores the decoded blob URL.
+ *   - Delete: confirmAndDelete(name) clears source + render caches.
+ *
+ * Per-kind API plumbing (getTemplate vs getExample) is the
+ * primary seam the tests pin down — the rest is bookkeeping.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -49,14 +54,6 @@ function summary(overrides: Partial<ResourceSummary>): ResourceSummary {
     }
 }
 
-function spoofedTarget(open: boolean): Event {
-    // The composable reads `event.target.open` which the browser
-    // sets on the real HTMLDetailsElement. We can't easily
-    // synthesize that from `new Event('toggle')`, so hand-build
-    // a duck-typed object that satisfies the access.
-    return { target: { open } } as unknown as Event
-}
-
 beforeEach(() => {
     setActivePinia(createPinia())
     vi.mocked(getTemplate).mockReset()
@@ -90,13 +87,14 @@ afterEach(() => {
 })
 
 describe('useResourceCardList — initial state', () => {
-    it('starts with empty openNames and source caches', () => {
+    it('starts with empty source + render caches', () => {
         const c = useResourceCardList('template')
-        expect(c.openNames.value.size).toBe(0)
-        expect(c.highlightedByName.value).toEqual({})
         expect(c.sourceByName.value).toEqual({})
+        expect(c.renderedByName.value).toEqual({})
         expect(c.loadingName.value).toBeNull()
         expect(c.loadError.value).toBeNull()
+        expect(c.renderError.value).toBeNull()
+        expect(c.renderingName.value).toBeNull()
     })
 
     it('hasItems mirrors the store collection length', () => {
@@ -125,52 +123,16 @@ describe('useResourceCardList — initial state', () => {
     })
 })
 
-describe('useResourceCardList — open-state mirror', () => {
-    it('adds the name when the user opens the details', () => {
-        const c = useResourceCardList('template')
-        c.onToggle('a.typ', spoofedTarget(true))
-        expect(c.openNames.value.has('a.typ')).toBe(true)
-    })
-
-    it('removes the name when the user closes the details', () => {
-        const c = useResourceCardList('template')
-        c.openNames.value = new Set(['a.typ'])
-        c.onToggle('a.typ', spoofedTarget(false))
-        expect(c.openNames.value.has('a.typ')).toBe(false)
-    })
-
-    it('records two cards as independently open (regression: the multi-expand flicker)', () => {
-        // The original bug: openId was a single string ref driving a
-        // :open binding. Vue ↔ native <details> looped, flickering
-        // two open cards 30 times/second. The contract now is that
-        // any number of cards can be open at once — the Set holds
-        // them independently and the browser owns the open attr.
-        const c = useResourceCardList('template')
-        c.onToggle('a.typ', spoofedTarget(true))
-        c.onToggle('b.typ', spoofedTarget(true))
-        expect(c.openNames.value.has('a.typ')).toBe(true)
-        expect(c.openNames.value.has('b.typ')).toBe(true)
-        // Closing A must not affect B.
-        c.onToggle('a.typ', spoofedTarget(false))
-        expect(c.openNames.value.has('a.typ')).toBe(false)
-        expect(c.openNames.value.has('b.typ')).toBe(true)
-    })
-})
-
-describe('useResourceCardList — first-open source fetch', () => {
-    it('fetches the source once on first open via the kind-specific API', async () => {
+describe('useResourceCardList — ensureSource', () => {
+    it('fetches the source via the kind-specific API and caches it', async () => {
         vi.mocked(getTemplate).mockResolvedValueOnce('= hello')
 
         const c = useResourceCardList('template')
-        c.onToggle('a.typ', spoofedTarget(true))
-
-        // Allow the fire-and-forget ensureSource to settle.
-        await flushPromises()
+        await c.ensureSource('a.typ')
 
         expect(getTemplate).toHaveBeenCalledTimes(1)
         expect(getTemplate).toHaveBeenCalledWith('a.typ')
         expect(c.sourceByName.value['a.typ']).toBe('= hello')
-        expect(c.highlightedByName.value['a.typ']).toContain('hello')
         expect(c.loadingName.value).toBeNull()
     })
 
@@ -178,45 +140,29 @@ describe('useResourceCardList — first-open source fetch', () => {
         vi.mocked(getExample).mockResolvedValueOnce('#let x = 1')
 
         const c = useResourceCardList('example')
-        c.onToggle('snippet.typ', spoofedTarget(true))
-        await flushPromises()
+        await c.ensureSource('snippet.typ')
 
         expect(getExample).toHaveBeenCalledWith('snippet.typ')
         expect(getTemplate).not.toHaveBeenCalled()
         expect(c.sourceByName.value['snippet.typ']).toBe('#let x = 1')
     })
 
-    it('does NOT re-fetch on a re-open after the source is already cached', async () => {
-        vi.mocked(getTemplate).mockResolvedValueOnce('first')
+    it('does NOT re-fetch when the source is already cached', async () => {
+        vi.mocked(getTemplate).mockResolvedValue('first')
 
         const c = useResourceCardList('template')
-        c.onToggle('a.typ', spoofedTarget(true))
-        await flushPromises()
-        // User closes the card and re-opens it.
-        c.onToggle('a.typ', spoofedTarget(false))
-        c.onToggle('a.typ', spoofedTarget(true))
-        await flushPromises()
+        await c.ensureSource('a.typ')
+        await c.ensureSource('a.typ')
+        await c.ensureSource('a.typ')
 
         expect(getTemplate).toHaveBeenCalledTimes(1)
-    })
-
-    it('does NOT fetch on a click that DID NOT transition closed→open', async () => {
-        // Defensive: ensureSource is gated on `target.open && !wasOpen`.
-        // A spurious toggle event with `target.open=false` while the
-        // card was already closed must not trigger a fetch.
-        vi.mocked(getTemplate).mockResolvedValue('should-not-be-called')
-        const c = useResourceCardList('template')
-        c.onToggle('a.typ', spoofedTarget(false))
-        await flushPromises()
-        expect(getTemplate).not.toHaveBeenCalled()
     })
 
     it('records the error message and clears loading on a failed fetch', async () => {
         vi.mocked(getTemplate).mockRejectedValueOnce(new Error('boom'))
 
         const c = useResourceCardList('template')
-        c.onToggle('a.typ', spoofedTarget(true))
-        await flushPromises()
+        await c.ensureSource('a.typ')
 
         expect(c.loadError.value).toBe('failed to read template')
         expect(c.loadingName.value).toBeNull()
@@ -229,8 +175,7 @@ describe('useResourceCardList — first-open source fetch', () => {
         )
 
         const c = useResourceCardList('template')
-        c.onToggle('a.typ', spoofedTarget(true))
-        await flushPromises()
+        await c.ensureSource('a.typ')
 
         expect(c.loadError.value).toBe('server-said-no')
     })
@@ -268,7 +213,7 @@ describe('useResourceCardList — confirmAndDelete', () => {
         expect(removeSpy).not.toHaveBeenCalled()
     })
 
-    it('clears both caches and the open-set when the user confirms', async () => {
+    it('clears the source cache for the deleted name when the user confirms', async () => {
         const confirmSpy = vi.fn().mockReturnValue(true)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(window as any).confirm = confirmSpy
@@ -278,18 +223,14 @@ describe('useResourceCardList — confirmAndDelete', () => {
         ;(store as any).removeTemplate = removeSpy
 
         const c = useResourceCardList('template')
-        c.openNames.value = new Set(['a.typ', 'b.typ'])
         c.sourceByName.value = { 'a.typ': 'x', 'b.typ': 'y' }
-        c.highlightedByName.value = { 'a.typ': '<hl>x</hl>', 'b.typ': '<hl>y</hl>' }
 
         await c.confirmAndDelete('a.typ')
 
         expect(confirmSpy).toHaveBeenCalled()
         expect(removeSpy).toHaveBeenCalledWith('a.typ')
-        expect(c.openNames.value.has('a.typ')).toBe(false)
-        expect(c.openNames.value.has('b.typ')).toBe(true)
         expect(c.sourceByName.value['a.typ']).toBeUndefined()
-        expect(c.highlightedByName.value['a.typ']).toBeUndefined()
+        expect(c.sourceByName.value['b.typ']).toBe('y')
     })
 
     it('uses store.removeExample when kind is "example"', async () => {
@@ -365,5 +306,118 @@ describe('useResourceCardList — onMounted auto-load', () => {
         await flushPromises()
 
         expect(loadSpy).not.toHaveBeenCalled()
+    })
+})
+
+describe('useResourceCardList — example render', () => {
+    // The store's `renderExample` bridge is added in a separate
+    // commit; the tests patch it onto the store directly so the
+    // composable's cast-based access resolves to a controlled
+    // stub. The composable decodes the base64 payload into a Blob
+    // and stores the resulting objectURL keyed by name.
+
+    const PNG_1X1_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP8//8/AwAI/AL+Sj0G6AAAAABJRU5ErkJggg=='
+
+    function patchStoreRender(impl: (n: string, c: string, f: string, p: number) => Promise<unknown>): void {
+        const store = useResourceStore()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(store as any).renderExample = vi.fn().mockImplementation(impl)
+    }
+
+    it('starts with empty renderedByName and null renderError', () => {
+        const c = useResourceCardList('example')
+        expect(c.renderedByName.value).toEqual({})
+        expect(c.renderError.value).toBeNull()
+        expect(c.renderingName.value).toBeNull()
+    })
+
+    it('renderExample stores a blobUrl + mime + format keyed by name', async () => {
+        patchStoreRender(async (name) => ({
+            bytes: PNG_1X1_BASE64,
+            mime: 'image/png',
+            format: 'png',
+            source_name: name,
+            width: 1,
+            height: 1,
+        }))
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= hi')
+
+        const cached = c.renderedByName.value['snippet.typ']
+        expect(cached).toBeDefined()
+        expect(cached!.format).toBe('png')
+        expect(cached!.mime).toBe('image/png')
+        expect(cached!.width).toBe(1)
+        expect(cached!.height).toBe(1)
+        expect(cached!.blobUrl).toMatch(/^blob:/)
+        expect(c.renderError.value).toBeNull()
+        expect(c.renderingName.value).toBeNull()
+    })
+
+    it('renderExample asks the store for png @ 144 ppi', async () => {
+        const renderSpy = vi.fn().mockResolvedValue({
+            bytes: PNG_1X1_BASE64,
+            mime: 'image/png',
+            format: 'png',
+            source_name: 'snippet.typ',
+            width: 1,
+            height: 1,
+        })
+        patchStoreRender(renderSpy)
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= hi')
+
+        expect(renderSpy).toHaveBeenCalledWith('snippet.typ', '= hi', 'png', 144)
+    })
+
+    it('renderExample sets renderError when the store rejects with ApiError', async () => {
+        patchStoreRender(async () => {
+            throw new ApiError('compile-failed', 'COMPILE_ERROR', 422)
+        })
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= broken')
+
+        expect(c.renderError.value).toBe('compile-failed')
+        expect(c.renderedByName.value['snippet.typ']).toBeUndefined()
+        expect(c.renderingName.value).toBeNull()
+    })
+
+    it('renderExample sets a fallback renderError when the store rejects with a plain Error', async () => {
+        patchStoreRender(async () => {
+            throw new Error('boom')
+        })
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= broken')
+
+        expect(c.renderError.value).toBe('failed to render example')
+    })
+
+    it('clearRender removes the cached entry', async () => {
+        patchStoreRender(async (name) => ({
+            bytes: PNG_1X1_BASE64,
+            mime: 'image/png',
+            format: 'png',
+            source_name: name,
+            width: 1,
+            height: 1,
+        }))
+
+        const c = useResourceCardList('example')
+        await c.renderExample('a.typ', '= a')
+        expect(c.renderedByName.value['a.typ']).toBeDefined()
+
+        c.clearRender('a.typ')
+        expect(c.renderedByName.value['a.typ']).toBeUndefined()
+    })
+
+    it('clearRender is a no-op for an unknown name', () => {
+        const c = useResourceCardList('example')
+        // Should not throw or mutate state.
+        c.clearRender('never-rendered.typ')
+        expect(c.renderedByName.value).toEqual({})
     })
 })

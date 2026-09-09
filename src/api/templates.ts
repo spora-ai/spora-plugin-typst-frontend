@@ -5,6 +5,7 @@
  *   GET    /typst/templates[?principal_id=N]  → { data: { templates: TemplateResource[] } }
  *   GET    /typst/templates/{name}            → text/plain body (the .typ source)
  *   POST   /typst/templates                    body { name, content } → 201 + { data: { template: {...} } }
+ *   PUT    /typst/templates/{name}             body { content } → 200 + { data: { template: {...} } }
  *   DELETE /typst/templates/{name}             → 204
  *
  * Templates are filesystem-backed UTF-8 source files under
@@ -40,6 +41,21 @@ export async function getTemplate(name: string): Promise<string> {
 export async function uploadTemplate(name: string, content: string): Promise<TemplateResource> {
     const api = getApi()
     const result = await api.post<{ template: TemplateResource }>('/typst/templates', { name, content })
+    return result.template
+}
+
+/**
+ * Replace the contents of an existing principal-tier template. The
+ * controller upserts on `(principal_id, name)`, so the row's `size`
+ * and `modified_at` reflect the new bytes and `name` itself is
+ * immutable on this path (rename is a delete + upload).
+ */
+export async function updateTemplate(name: string, content: string): Promise<TemplateResource> {
+    const api = getApi()
+    const result = await api.put<{ template: TemplateResource }>(
+        `/typst/templates/${encodeURIComponent(name)}`,
+        { content },
+    )
     return result.template
 }
 

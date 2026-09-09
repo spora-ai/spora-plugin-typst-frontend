@@ -5,7 +5,24 @@
  *   - Templates  (uploader + list of per-principal typ templates)
  *   - Examples   (uploader + list of per-principal typ example patterns)
  *   - Images     (uploader + grid of per-principal images)
- *   - Playground (typ source editor + format selector + result panel)
+ *   - Editor     (typ source editor + format selector + result panel)
+ *
+ * The Editor is the renamed "Playground" — the label change is
+ * UI-only per the project's "UI label rename only" rule. The
+ * underlying wire still uses `/api/v1/typst/{preview,compile,sources}`
+ * and `tool_name='typst.playground'` on the DB.
+ *
+ * Cross-tab prefill:
+ *   Examples tab's "Open Copy in Editor" button (and the same
+ *   affordance on Templates) emits `open-in-editor` with
+ *   `{ name, content, filename }`. We route it through
+ *   `useTabsStore().goToEditor(prefill)` and the Editor consumes
+ *   the prefill on its next mount via the tabs store.
+ *
+ * Edit is in-place inside `<ResourceOverlay>` — the overlay
+ * swaps its readOnly SourceEditor for an editable one when the
+ * operator clicks Edit, then PUTs via the resource store. The
+ * parent no longer needs an edit-modal layer.
  *
  * Principal scope:
  *   A single chip row between the tab nav and the tab content
@@ -14,11 +31,12 @@
  *   tier-1). Uploads stay tied to the caller's own principal
  *   (no override on POST).
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useResourceStore } from '../stores/resources'
 import { useImagesStore } from '../stores/images'
 import { useSourcesStore } from '../stores/sources'
 import { usePrincipalsStore } from '../stores/principals'
+import { useTabsStore, type Tab } from '../stores/tabs'
 import FontUploader from '../components/FontUploader.vue'
 import FontList from '../components/FontList.vue'
 import TemplateUploader from '../components/TemplateUploader.vue'
@@ -31,31 +49,29 @@ import CompileForm from '../components/CompileForm.vue'
 import AlertBanner from '../components/AlertBanner.vue'
 import PrincipalChipRow from '../components/PrincipalChipRow.vue'
 
-type Tab = 'fonts' | 'templates' | 'examples' | 'images' | 'playground'
-
-const TABS: readonly Tab[] = ['fonts', 'templates', 'examples', 'images', 'playground']
+const TABS: readonly Tab[] = ['fonts', 'templates', 'examples', 'images', 'editor']
 
 const TAB_LABELS: Record<Tab, string> = {
     fonts: 'Fonts',
     templates: 'Templates',
     examples: 'Examples',
     images: 'Images',
-    playground: 'Playground',
+    editor: 'Editor',
 }
 
 const props = defineProps<{
     hostContext: import('../shims').PluginHostContext
 }>()
 
-const activeTab = ref<Tab>('fonts')
+const tabsStore = useTabsStore()
 const resourceStore = useResourceStore()
 const imagesStore = useImagesStore()
 const sourcesStore = useSourcesStore()
 const principalsStore = usePrincipalsStore()
 
 // Wire the chip-row selection into the resource, image, and
-// playground-source stores. The watchers inside each store
-// re-fetch on change.
+// editor-source stores. The watchers inside each store re-fetch
+// on change.
 watch(
     () => principalsStore.selectedPrincipalId,
     (id) => {
@@ -65,6 +81,13 @@ watch(
     },
     { immediate: true },
 )
+
+// Templates + Examples tab's "Open Copy in Editor" — switch to the
+// Editor tab with the resource's source pre-filled as a copy. The
+// Editor consumes the prefill on its next mount.
+function onOpenInEditor(payload: { name: string; content: string; filename: string }): void {
+    tabsStore.goToEditor({ source: payload.content, filename: payload.filename })
+}
 
 const combinedError = computed<string | null>(() =>
     resourceStore.error ?? imagesStore.error ?? sourcesStore.error ?? principalsStore.error ?? null,
@@ -115,38 +138,38 @@ onMounted(async () => {
                         type="button"
                         :class="[
                             'px-4 py-2 text-sm border-b-2 -mb-px transition-colors rounded-t',
-                            activeTab === tab
+                            tabsStore.activeTab === tab
                                 ? 'border-primary text-primary font-semibold bg-primary/5'
                                 : 'border-transparent text-muted-foreground font-medium hover:text-foreground hover:border-border',
                         ]"
-                        :aria-current="activeTab === tab ? 'page' : undefined"
-                        @click="activeTab = tab"
+                        :aria-current="tabsStore.activeTab === tab ? 'page' : undefined"
+                        @click="tabsStore.setTab(tab)"
                     >{{ TAB_LABELS[tab] }}</button>
                 </li>
             </ul>
         </nav>
 
-        <section v-if="activeTab === 'fonts'" class="space-y-4">
+        <section v-if="tabsStore.activeTab === 'fonts'" class="space-y-4">
             <FontUploader />
             <FontList />
         </section>
 
-        <section v-else-if="activeTab === 'templates'" class="space-y-4">
+        <section v-else-if="tabsStore.activeTab === 'templates'" class="space-y-4">
             <TemplateUploader />
-            <TemplateList />
+            <TemplateList @open-in-editor="onOpenInEditor" />
         </section>
 
-        <section v-else-if="activeTab === 'examples'" class="space-y-4">
+        <section v-else-if="tabsStore.activeTab === 'examples'" class="space-y-4">
             <ExampleUploader />
-            <ExampleList />
+            <ExampleList @open-in-editor="onOpenInEditor" />
         </section>
 
-        <section v-else-if="activeTab === 'images'" class="space-y-4">
+        <section v-else-if="tabsStore.activeTab === 'images'" class="space-y-4">
             <ImageUploader />
             <ImageList />
         </section>
 
-        <section v-else-if="activeTab === 'playground'" class="space-y-4">
+        <section v-else-if="tabsStore.activeTab === 'editor'" class="space-y-4">
             <CompileForm :host-context="props.hostContext" />
         </section>
     </div>

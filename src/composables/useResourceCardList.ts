@@ -2,7 +2,6 @@ import { computed, onMounted, ref } from 'vue'
 import { ApiError } from '../api/client'
 import { getExample } from '../api/examples'
 import { getTemplate } from '../api/templates'
-import { highlightTypst } from 'highlightjs-typst/highlight'
 import { useResourceStore } from '../stores/resources'
 
 export type ResourceKind = 'template' | 'example'
@@ -11,6 +10,21 @@ export interface ResourceSummary {
     name: string
     size: number
     origin: 'principal' | 'skill'
+}
+
+/**
+ * One rendered preview cache entry — the decoded Blob URL form
+ * of {@see stores/resources.RenderExampleResult}. `format` mirrors
+ * the API envelope's union (`'pdf' | 'png' | 'svg'`) so the
+ * template's `format === 'png'` / `'svg'` / `'pdf'` branch
+ * narrows without a cast.
+ */
+export interface RenderedPreview {
+    blobUrl: string
+    mime: string
+    format: 'pdf' | 'png' | 'svg'
+    width: number | null
+    height: number | null
 }
 
 /**
@@ -27,16 +41,50 @@ function formatBytes(n: number): string {
 }
 
 /**
- * Card-grid logic shared by the Templates and Examples panels.
+ * Decode the base64 payload `POST /typst/preview` returns into a
+ * `Blob` so we can hand the bytes to `<img src>` / `<a href>` via
+ * a transient objectURL. `atob` operates on a binary string, so
+ * we walk each char and push its byte value into the Uint8Array.
+ * Keeps the conversion in one place — the cache only stores
+ * objectURLs, not raw base64.
+ */
+function base64ToBlob(base64: string, mime: string): Blob {
+    const bytes = atob(base64)
+    const arr = new Uint8Array(bytes.length)
+    for (let i = 0; i < bytes.length; i++) {
+        // codePointAt (not charCodeAt) so multi-byte UTF-8 sequences
+        // decoded from base64 round-trip correctly when the
+        // preview payload contains non-ASCII bytes. Sonar S7758.
+        arr[i] = bytes.codePointAt(i) ?? 0
+    }
+    return new Blob([arr], { type: mime })
+}
+
+/**
+ * Card-grid data layer shared by the Templates and Examples panels.
  *
- * `openNames` mirrors the browser-native `<details>` state via the
- * `toggle` event; we deliberately do NOT bind `:open` because that
- * ping-pongs with `@toggle` and visibly flickers as soon as two
- * cards are open at once. The Set drives only the
- * `md:col-span-2` layout and a one-shot first-open fetch.
+ * The previous version tracked `<details>` open state and
+ * highlight.js output here. The overlay refactor moved both into
+ * `<ResourceOverlay>` (a modal driven by source fetched on open),
+ * so the composable now owns only the data the overlay + card
+ * need: the per-name source cache, the per-name render cache,
+ * the delete confirm, and the loading / error flags.
  *
- * Returns plain Vue refs so callers can destructure into templates
- * or pass them down as props to a child card component.
+ * Source cache:
+ *   `ensureSource(name)` lazy-fetches the source the first time
+ *   a card is opened or the overlay is mounted. Subsequent
+ *   lookups short-circuit on the cache hit so re-opens don't
+ *   round-trip to the backend.
+ *
+ * Render cache:
+ *   `renderExample(name, content)` calls `/typst/preview` and
+ *   decodes the base64 payload into a Blob URL. Cached per-name
+ *   so the operator can re-open the overlay and still see the
+ *   last render. `clearRender(name)` revokes the objectURL when
+ *   the entry is dropped (e.g. after delete).
+ *
+ * Returns plain Vue refs so callers can destructure into
+ * templates or pass them down as props to a child component.
  */
 export function useResourceCardList(kind: ResourceKind) {
     const store = useResourceStore()
@@ -51,22 +99,64 @@ export function useResourceCardList(kind: ResourceKind) {
         kind === 'template' ? store.loadTemplates() : store.loadExamples()
     )
 
-    const openNames = ref<Set<string>>(new Set())
     const sourceByName = ref<Record<string, string>>({})
-    const highlightedByName = ref<Record<string, string>>({})
     const loadingName = ref<string | null>(null)
     const loadError = ref<string | null>(null)
 
-    function onToggle(name: string, event: Event): void {
-        const target = event.target as HTMLDetailsElement
-        const wasOpen = openNames.value.has(name)
-        const next = new Set(openNames.value)
-        if (target.open) next.add(name)
-        else next.delete(name)
-        openNames.value = next
-        if (target.open && !wasOpen) {
-            // First expand only — `sourceByName` cache skips re-opens.
-            void ensureSource(name)
+    const renderingName = ref<string | null>(null)
+    const renderError = ref<string | null>(null)
+    const renderedByName = ref<Record<string, RenderedPreview>>({})
+
+    function clearRender(name: string): void {
+        const prev = renderedByName.value[name]
+        if (prev === undefined) return
+        // Revoke the objectURL so the underlying Blob can be GC'd;
+        // without this, repeated renders on the same name accumulate
+        // Blob memory until the page reloads.
+        URL.revokeObjectURL(prev.blobUrl)
+        const next = { ...renderedByName.value }
+        delete next[name]
+        renderedByName.value = next
+    }
+
+    async function renderExample(name: string, content: string): Promise<void> {
+        renderingName.value = name
+        renderError.value = null
+        try {
+            // The store's `renderExample` bridge hits `/typst/preview`
+            // and returns the decoded `RenderExampleResult` (which
+            // is now an alias for `PreviewResult` so the shape
+            // stays in sync automatically — see
+            // `src/stores/resources.ts`). The store-level
+            // indirection keeps the composable out of the api/*
+            // module graph so the components can render without
+            // dragging the network client in.
+            const result = await store.renderExample(name, content, 'png', 144)
+            if (result === null) {
+                renderError.value = store.error ?? 'failed to render example'
+                return
+            }
+            const blob = base64ToBlob(result.bytes, result.mime)
+            const blobUrl = URL.createObjectURL(blob)
+            // Replace any previous render for this name so the
+            // objectURL → Blob mapping stays 1:1; the previous URL
+            // is revoked below so it can be reclaimed.
+            const prev = renderedByName.value[name]
+            renderedByName.value = {
+                ...renderedByName.value,
+                [name]: {
+                    blobUrl,
+                    mime: result.mime,
+                    format: result.format,
+                    width: result.width,
+                    height: result.height,
+                },
+            }
+            if (prev !== undefined) URL.revokeObjectURL(prev.blobUrl)
+        } catch (e) {
+            renderError.value = e instanceof ApiError ? e.message : 'failed to render example'
+        } finally {
+            renderingName.value = null
         }
     }
 
@@ -77,10 +167,6 @@ export function useResourceCardList(kind: ResourceKind) {
         try {
             const source = await fetchSource(name)
             sourceByName.value = { ...sourceByName.value, [name]: source }
-            highlightedByName.value = {
-                ...highlightedByName.value,
-                [name]: highlightTypst(source),
-            }
         } catch (e) {
             loadError.value = e instanceof ApiError ? e.message : `failed to read ${kind}`
         } finally {
@@ -95,14 +181,9 @@ export function useResourceCardList(kind: ResourceKind) {
             const nextSource = { ...sourceByName.value }
             delete nextSource[name]
             sourceByName.value = nextSource
-            const nextHighlighted = { ...highlightedByName.value }
-            delete nextHighlighted[name]
-            highlightedByName.value = nextHighlighted
-            if (openNames.value.has(name)) {
-                const nextOpen = new Set(openNames.value)
-                nextOpen.delete(name)
-                openNames.value = nextOpen
-            }
+            // A deleted example's cached render is also orphaned —
+            // the Blob is now detached from any on-disk artifact.
+            clearRender(name)
         } catch {
             // store.error already populated
         }
@@ -129,16 +210,19 @@ export function useResourceCardList(kind: ResourceKind) {
     })
 
     return {
-        openNames,
         sourceByName,
-        highlightedByName,
         loadingName,
         loadError,
         principalItems,
         skillItems,
         hasItems,
         formatBytes,
-        onToggle,
+        ensureSource,
         confirmAndDelete,
+        renderingName,
+        renderError,
+        renderedByName,
+        renderExample,
+        clearRender,
     }
 }
