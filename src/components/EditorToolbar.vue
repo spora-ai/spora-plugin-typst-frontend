@@ -46,11 +46,17 @@ export interface EditorSurface {
 }
 
 const props = defineProps<{
-    editorRef: { value: EditorSurface | null }
+    /**
+     * The SourceEditor instance (Vue auto-unwraps the caller's
+     * ref when binding `:editor-ref="someRef"`). Nullable so the
+     * toolbar can render before the editor mounts — every method
+     * call short-circuits on null.
+     */
+    editorRef: EditorSurface | null
 }>()
 
 function onToolClick(tool: ToolbarTool): void {
-    const editor = props.editorRef.value
+    const editor = props.editorRef
     if (editor === null) return
     const selection = editor.getSelection()
     const snippet = applyTool(tool, selection)

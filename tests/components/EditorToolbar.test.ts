@@ -25,7 +25,7 @@ interface StubEditor {
     textarea: { selectionStart: number | null; setSelectionRange: (start: number, end: number) => void; focus: () => void } | null
 }
 
-function makeStub(initialSelection: string | null): { ref: { value: StubEditor | null }, stub: StubEditor } {
+function makeStub(initialSelection: string | null): { editorRef: StubEditor | null, stub: StubEditor } {
     const stub: StubEditor = {
         getSelection: vi.fn(() => initialSelection),
         replaceSelection: vi.fn(),
@@ -36,7 +36,7 @@ function makeStub(initialSelection: string | null): { ref: { value: StubEditor |
             focus: vi.fn(),
         },
     }
-    return { ref: { value: stub }, stub }
+    return { editorRef: stub, stub }
 }
 
 beforeEach(() => {
@@ -46,7 +46,7 @@ beforeEach(() => {
 
 describe('EditorToolbar.vue', () => {
     it('renders a button for each formatting tool', () => {
-        const { ref: editorRef } = makeStub(null)
+        const { editorRef } = makeStub(null)
         const wrapper = mount(EditorToolbar, {
             props: { editorRef },
         })
@@ -60,7 +60,7 @@ describe('EditorToolbar.vue', () => {
     })
 
     it('clicking Bold with a selection wraps the selection in *…*', async () => {
-        const { ref: editorRef, stub } = makeStub('hello')
+        const { editorRef, stub } = makeStub('hello')
         const wrapper = mount(EditorToolbar, {
             props: { editorRef },
         })
@@ -73,7 +73,7 @@ describe('EditorToolbar.vue', () => {
     })
 
     it('clicking Bold with no selection inserts the placeholder', async () => {
-        const { ref: editorRef, stub } = makeStub(null)
+        const { editorRef, stub } = makeStub(null)
         const wrapper = mount(EditorToolbar, {
             props: { editorRef },
         })
@@ -85,7 +85,7 @@ describe('EditorToolbar.vue', () => {
     })
 
     it('clicking Heading prefixes the selection line-by-line', async () => {
-        const { ref: editorRef, stub } = makeStub('first\nsecond')
+        const { editorRef, stub } = makeStub('first\nsecond')
         const wrapper = mount(EditorToolbar, {
             props: { editorRef },
         })
@@ -97,7 +97,7 @@ describe('EditorToolbar.vue', () => {
     })
 
     it('clicking Underline wraps in #underline[…] (function-call form)', async () => {
-        const { ref: editorRef, stub } = makeStub('text')
+        const { editorRef, stub } = makeStub('text')
         const wrapper = mount(EditorToolbar, {
             props: { editorRef },
         })
@@ -109,7 +109,7 @@ describe('EditorToolbar.vue', () => {
     })
 
     it('clicking Link wraps the selection in #link("…")[…]', async () => {
-        const { ref: editorRef, stub } = makeStub('click me')
+        const { editorRef, stub } = makeStub('click me')
         const wrapper = mount(EditorToolbar, {
             props: { editorRef },
         })
@@ -121,7 +121,7 @@ describe('EditorToolbar.vue', () => {
     })
 
     it('renders the trailing slot when provided', () => {
-        const { ref: editorRef } = makeStub(null)
+        const { editorRef } = makeStub(null)
         const wrapper = mount(EditorToolbar, {
             props: { editorRef },
             slots: {

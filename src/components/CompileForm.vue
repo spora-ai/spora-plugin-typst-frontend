@@ -1,8 +1,19 @@
 <script setup lang="ts">
 /**
- * Editor: paste Typst source, click Render, see the result. No DB
- * writes on render — every render is ephemeral so iterating on a
- * document doesn't fill the media archive with parent rows.
+ * Editor: paste Typst source, click Preview / Save & Render, see
+ * the result. No DB writes on render — every render is ephemeral
+ * so iterating on a document doesn't fill the media archive with
+ * parent rows.
+ *
+ * Action buttons (footer):
+ *   - **Preview** — POST /preview only. Ephemeral, no DB writes.
+ *     Use this when iterating without committing.
+ *   - **Save & Render** — POST /sources to persist the buffer
+ *     first, then POST /preview against the same source. One
+ *     click = save + see result. The Save Source button is gone
+ *     — Save & Render covers the "save then look" path; if the
+ *     operator just wants to save, the Open picker dropdown
+ *     surfaces every saved source for re-opening.
  *
  * Backend path: `POST /api/v1/typst/preview` (TypstPreviewController
  * in the plugin) — same compile + render pipeline the agent's
@@ -22,13 +33,17 @@
  * uses `/compile` for production renders that need a persistent
  * output row.
  *
- * Pickers:
- *   - **Image picker** — inserts `#image("…")` at the cursor from
- *     the plugin's image library or the media archive.
- *   - **Template picker** — inserts `#import "templates/X.typ"` at
- *     the cursor. Closes the loop on the file-not-found diagnostic
- *     hint: operators no longer have to type the `templates/`
- *     prefix manually.
+ * Toolbar (above editor):
+ *   - **Formatting tools** — Heading, Bold, Italic, Underline,
+ *     Link. Lives in `<EditorToolbar>` (a separate component);
+ *     each tool reads the current selection and either wraps it
+ *     or inserts a placeholder. See `useEditorToolbar.ts` for the
+ *     per-tool dispatch logic.
+ *   - **Insert Template / Insert Image** (trailing slot of the
+ *     toolbar) — these pickers stay in CompileForm because their
+ *     state is local (modal open / loading / templates list),
+ *     but they live in the toolbar so the operator doesn't have
+ *     to scroll to reach them.
  *
  * Cross-tab prefill:
  *   The Examples tab's "Open Copy in Editor" button (and the same
@@ -51,6 +66,7 @@ import type { ImageResource, MediaArchiveImage, PlaygroundSourceSummary, Templat
 import OpenPickerModal from './OpenPickerModal.vue'
 import SourceEditor from './SourceEditor.vue'
 import TemplateInsertionPicker from './TemplateInsertionPicker.vue'
+import EditorToolbar from './EditorToolbar.vue'
 
 defineProps<{
     hostContext: import('../shims').PluginHostContext
@@ -301,53 +317,12 @@ function base64ToBlob(base64: string, mime: string): Blob {
     return new Blob([arr], { type: mime })
 }
 
-async function saveCurrent(): Promise<void> {
-    if (currentSourceId.value === null) {
-        // No row yet — the user has typed into a fresh buffer
-        // (clicked "New" or just landed on the page). Persist via
-        // the create endpoint without paying for a compile.
-        // Conflict (409, same filename) surfaces as a normal
-        // error; the user can rename and try again.
-        const created = await sourcesStore.createSource(filename.value, source.value)
-        if (created !== null) {
-            currentSourceId.value = created.id
-            currentSourceIsDirty.value = false
-            result.value = null
-            revokeResultBlob()
-        } else {
-            error.value = sourcesStore.error ?? 'Failed to save.'
-        }
-        return
-    }
-    const saved = await sourcesStore.saveSource(currentSourceId.value, source.value)
-    if (saved !== null) {
-        currentSourceIsDirty.value = false
-        result.value = null
-        revokeResultBlob()
-    } else {
-        error.value = sourcesStore.error ?? 'Failed to save.'
-    }
-}
-
-async function deleteCurrent(): Promise<void> {
-    if (currentSourceId.value === null) return
-    const confirmed = window.confirm(`Delete "${filename.value}" from the media archive? This cannot be undone.`)
-    if (!confirmed) return
-    try {
-        await sourcesStore.removeSource(currentSourceId.value)
-    } catch (e) {
-        if (e instanceof ApiError) {
-            error.value = e.message
-        } else {
-            const raw = e instanceof Error ? e.message : String(e)
-            error.value = `Could not reach the server to delete the file (${raw}). Check the browser console for the full request log.`
-            console.error('typst editor: delete failed', e)
-        }
-        return
-    }
-    startNewSource()
-}
-
+/**
+ * Render the buffer ephemerally — no DB writes, no derivatives.
+ * Used by the Preview button (footer). For the Save & Render
+ * path, the button handler calls this AFTER the createSource /
+ * saveSource call returns so the same render pipeline is reused.
+ */
 async function render(): Promise<void> {
     busy.value = true
     error.value = null
@@ -375,6 +350,57 @@ async function render(): Promise<void> {
     } finally {
         busy.value = false
     }
+}
+
+/**
+ * Save & Render: persist the buffer (create or update the row by
+ * filename under the current principal) THEN run the preview.
+ * Sequential — if the save fails, the render doesn't run and
+ * the error surfaces from the store. If the render fails, the
+ * save has already landed so the operator can re-open the file
+ * later and iterate.
+ */
+async function saveAndRender(): Promise<void> {
+    error.value = null
+    // Persist first. Both branches update `currentSourceId` and
+    // clear the dirty flag on success so the Save badge updates
+    // correctly before the render starts.
+    if (currentSourceId.value === null) {
+        const created = await sourcesStore.createSource(filename.value, source.value)
+        if (created === null) {
+            error.value = sourcesStore.error ?? 'Failed to save.'
+            return
+        }
+        currentSourceId.value = created.id
+        currentSourceIsDirty.value = false
+    } else {
+        const saved = await sourcesStore.saveSource(currentSourceId.value, source.value)
+        if (saved === null) {
+            error.value = sourcesStore.error ?? 'Failed to save.'
+            return
+        }
+        currentSourceIsDirty.value = false
+    }
+    await render()
+}
+
+async function deleteCurrent(): Promise<void> {
+    if (currentSourceId.value === null) return
+    const confirmed = window.confirm(`Delete "${filename.value}" from the media archive? This cannot be undone.`)
+    if (!confirmed) return
+    try {
+        await sourcesStore.removeSource(currentSourceId.value)
+    } catch (e) {
+        if (e instanceof ApiError) {
+            error.value = e.message
+        } else {
+            const raw = e instanceof Error ? e.message : String(e)
+            error.value = `Could not reach the server to delete the file (${raw}). Check the browser console for the full request log.`
+            console.error('typst editor: delete failed', e)
+        }
+        return
+    }
+    startNewSource()
 }
 
 /**
@@ -535,16 +561,6 @@ onMounted(() => {
                     New
                 </button>
                 <button
-                    type="button"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
-                    :disabled="sourcesStore.saving"
-                    :title="hasOpenFile ? 'Persist source edits without re-rendering' : 'Save the current buffer as a new editor file'"
-                    @click="saveCurrent"
-                >
-                    {{ sourcesStore.saving ? 'Saving…' : 'Save' }}
-                    <span v-if="hasOpenFile && currentSourceIsDirty" class="text-primary">●</span>
-                </button>
-                <button
                     v-if="hasOpenFile"
                     type="button"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-destructive/50 text-destructive text-sm font-medium hover:bg-destructive/10"
@@ -558,6 +574,39 @@ onMounted(() => {
             </div>
 
             <label for="typst-source" class="block text-sm font-medium text-foreground pt-2">Typst source</label>
+            <EditorToolbar :editor-ref="editorRef">
+                <template #trailing>
+                    <button
+                        type="button"
+                        class="px-2 py-1 rounded text-xs font-medium text-foreground hover:bg-background hover:text-foreground border border-transparent hover:border-border transition-colors disabled:opacity-50"
+                        :disabled="busy"
+                        :aria-pressed="pickerOpen"
+                        @click="openImagePicker"
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="inline-block -mt-0.5 mr-1">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <polyline points="21 15 16 10 5 21" />
+                        </svg>
+                        Image
+                    </button>
+                    <button
+                        type="button"
+                        class="px-2 py-1 rounded text-xs font-medium text-foreground hover:bg-background hover:text-foreground border border-transparent hover:border-border transition-colors disabled:opacity-50"
+                        :disabled="busy"
+                        :aria-pressed="templatePickerOpen"
+                        @click="openTemplatePicker"
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="inline-block -mt-0.5 mr-1">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="9" y1="13" x2="13" y2="13" />
+                            <line x1="11" y1="17" x2="15" y2="17" />
+                        </svg>
+                        Template
+                    </button>
+                </template>
+            </EditorToolbar>
             <div class="relative">
                 <SourceEditor
                     ref="editorRef"
@@ -623,38 +672,19 @@ onMounted(() => {
                 <div class="flex items-center gap-2">
                     <button
                         type="button"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
-                        :disabled="busy"
-                        @click="openImagePicker"
+                        class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
+                        :disabled="busy || sourcesStore.saving"
+                        @click="render"
                     >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <rect x="3" height="18" width="18" rx="2" ry="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <polyline points="21 15 16 10 5 21" />
-                        </svg>
-                        Insert image
-                    </button>
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
-                        :disabled="busy"
-                        @click="openTemplatePicker"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                            <line x1="9" y1="13" x2="13" y2="13" />
-                            <line x1="11" y1="17" x2="15" y2="17" />
-                        </svg>
-                        Insert template
+                        {{ busy ? 'Rendering…' : 'Preview' }}
                     </button>
                     <button
                         type="button"
                         class="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-                        :disabled="busy"
-                        @click="render"
+                        :disabled="busy || sourcesStore.saving"
+                        @click="saveAndRender"
                     >
-                        {{ busy ? 'Rendering…' : 'Render' }}
+                        {{ sourcesStore.saving ? 'Saving…' : busy ? 'Rendering…' : 'Save & Render' }}
                     </button>
                 </div>
             </div>
