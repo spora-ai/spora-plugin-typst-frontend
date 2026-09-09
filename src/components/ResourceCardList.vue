@@ -1,14 +1,21 @@
 <script lang="ts">
 /**
- * Type-only block so the `edit` event payload can be imported
- * by parents (e.g. TypstPage.vue) without re-declaring the
- * shape. Vue's `<script setup>` strips non-macro exports at
- * runtime, so we keep this in a non-setup sibling block — both
- * blocks share the same module.
+ * Type-only block so the saved/open-in-editor event payload
+ * shapes are documented alongside the component. Vue's
+ * `<script setup>` strips non-macro exports at runtime, so this
+ * lives in a non-setup sibling block — both blocks share the
+ * same module.
  */
 import type { ResourceKind } from '../composables/useResourceCardList'
 
-export interface EditEventPayload {
+export interface OpenInEditorEventPayload {
+    name: string
+    kind: ResourceKind
+    content: string
+    filename: string
+}
+
+export interface SavedEventPayload {
     name: string
     kind: ResourceKind
     content: string
@@ -25,14 +32,14 @@ export interface EditEventPayload {
  * built-ins — the layout mirrors the directory partition in the
  * composable's principal/skill computeds.
  *
- * Each card is now a thin title-tile: the card body has only the
- * resource name + size + origin label. Clicking anywhere on the
- * card opens `<ResourceOverlay>` (the new single-action modal)
- * which holds the source viewer, edit affordance, copy-snippet
- * button, "Open Copy in Editor" / Render / Delete actions, and
- * the cached render thumbnail. The card no longer carries inline
- * `<details>` expansion + per-card action buttons — every action
- * lives in the overlay so the card grid stays uniform.
+ * Each card is a thin title-tile: name + size + origin label.
+ * Clicking anywhere on the card opens `<ResourceOverlay>`
+ * (the single-action modal) which holds the source viewer,
+ * edit affordance, copy-snippet button, "Open Copy in Editor" /
+ * Render / Delete actions, and the cached render thumbnail.
+ * The card no longer carries inline `<details>` expansion +
+ * per-card action buttons — every action lives in the overlay
+ * so the card grid stays uniform.
  *
  * The overlay is rendered inside this component (not the parent)
  * because its source + render cache live in
@@ -41,13 +48,18 @@ export interface EditEventPayload {
  * clean and the parent free of resource-specific state.
  *
  * Events bubbling up:
- *   - `edit` — Edit clicked in the overlay. The parent opens
- *     `<TextResourceEditModal>`.
- *   - `open-in-editor` — Open Copy in Editor clicked. The parent
- *     routes through `useTabsStore().goToEditor()` so the Editor
- *     tab pre-fills with a copy (the original is untouched).
- *   - `render-example` — Render clicked (examples only). Kept as
- *     a no-op telemetry signal — the parent doesn't need to act.
+ *   - `open-in-editor` — Open Copy in Editor clicked. The
+ *     parent routes through `useTabsStore().goToEditor()` so
+ *     the Editor tab pre-fills with a copy (the original is
+ *     untouched).
+ *   - `render-example` — Render clicked (examples only). Kept
+ *     as a no-op telemetry signal — the parent doesn't need to
+ *     act.
+ *
+ * Edit is in-place inside the overlay (no second modal). On
+ * successful save the overlay emits `saved` and this component
+ * refreshes its source cache so the next open shows the new
+ * bytes.
  */
 import { computed, ref, watch } from 'vue'
 import { useResourceStore } from '../stores/resources'
@@ -61,9 +73,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-    (e: 'edit', payload: EditEventPayload): void
+    (e: 'open-in-editor', payload: OpenInEditorEventPayload): void
     (e: 'render-example', payload: { name: string }): void
-    (e: 'open-in-editor', payload: { name: string; content: string; filename: string }): void
 }>()
 
 const store = useResourceStore()
@@ -120,13 +131,6 @@ watch([principalItems, skillItems], () => {
     if (!stillThere) openName.value = null
 })
 
-function onEdit(): void {
-    const name = openName.value
-    if (name === null) return
-    const content = sourceByName.value[name] ?? ''
-    emit('edit', { name, kind: props.kind, content })
-}
-
 function onOpenInEditor(): void {
     const name = openName.value
     if (name === null) return
@@ -135,6 +139,7 @@ function onOpenInEditor(): void {
     const stem = name.replace(/\.typ$/, '')
     emit('open-in-editor', {
         name,
+        kind: props.kind,
         content,
         filename: `${stem}-copy.typ`,
     })
@@ -153,6 +158,15 @@ async function onDelete(): Promise<void> {
     const name = openName.value
     if (name === null) return
     await confirmAndDelete(name)
+}
+
+function onSaved(payload: { name: string; content: string }): void {
+    // Refresh the source cache with the new bytes so re-opening
+    // the overlay (or another render) uses the saved content.
+    // The store's templates/examples array is already
+    // up-to-date — `updateTemplate` / `updateExample` swap the
+    // row in place — so we don't need to reload the listing.
+    sourceByName.value = { ...sourceByName.value, [payload.name]: payload.content }
 }
 </script>
 
@@ -243,10 +257,10 @@ async function onDelete(): Promise<void> {
             :loading="loadingName === openName"
             :load-error="loadingName === openName ? loadError : null"
             @close="closeOverlay"
-            @edit="onEdit"
             @open-in-editor="onOpenInEditor"
             @render="onRender"
             @delete="onDelete"
+            @saved="onSaved"
         />
     </div>
 </template>

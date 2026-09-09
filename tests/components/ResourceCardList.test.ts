@@ -93,42 +93,6 @@ describe('ResourceCardList.vue — card + overlay wiring', () => {
         wrapper.unmount()
     })
 
-    it('the overlay emits "edit" with { name, kind, content } when Edit is clicked', async () => {
-        mockState.templates = [{
-            name: 'invoice.typ',
-            kind: 'template',
-            origin: 'principal',
-            size: 200,
-            modified_at: 1_700_000_000,
-        }]
-
-        const wrapper = mount(ResourceCardList, {
-            props: {
-                kind: 'template',
-                emptyText: 'No templates',
-                builtInHeadingText: 'Built-in',
-            },
-        })
-
-        await flushPromises()
-        await wrapper.find('[data-testid="resource-card-invoice.typ"]').trigger('click')
-        await flushPromises()
-
-        const edit = wrapper.find('[data-testid="resource-overlay-edit"]')
-        expect(edit.exists()).toBe(true)
-        await edit.trigger('click')
-        await flushPromises()
-
-        const emitted = wrapper.emitted('edit')
-        expect(emitted).toBeDefined()
-        expect(emitted![0]![0]).toEqual({
-            name: 'invoice.typ',
-            kind: 'template',
-            content: '= Real template source\nbody\n',
-        })
-        wrapper.unmount()
-    })
-
     it('the overlay emits "open-in-editor" with <name>-copy.typ filename when clicked', async () => {
         mockState.templates = [{
             name: 'invoice.typ',
@@ -157,6 +121,7 @@ describe('ResourceCardList.vue — card + overlay wiring', () => {
         expect(emitted).toBeDefined()
         expect(emitted![0]![0]).toEqual({
             name: 'invoice.typ',
+            kind: 'template',
             content: '= Real template source\nbody\n',
             filename: 'invoice-copy.typ',
         })
@@ -191,6 +156,7 @@ describe('ResourceCardList.vue — card + overlay wiring', () => {
         expect(emitted).toBeDefined()
         expect(emitted![0]![0]).toEqual({
             name: 'headings.typ',
+            kind: 'example',
             content: '= Real example source\nbody\n',
             filename: 'headings-copy.typ',
         })
@@ -283,6 +249,43 @@ describe('ResourceCardList.vue — card + overlay wiring', () => {
 
         // After close, the overlay should be unmounted.
         expect(wrapper.find('[data-testid="resource-overlay-dialog"]').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('edit is in-place — Edit does NOT emit an "edit" event to the parent', async () => {
+        // Edit handles the PUT and v-model swap inside the overlay
+        // itself; no parent coordination needed. The previous
+        // stacked-modal design emitted an "edit" event so the
+        // parent could open a separate edit modal — that created
+        // ambiguous Esc / backdrop behaviour.
+        mockState.templates = [{
+            name: 'invoice.typ',
+            kind: 'template',
+            origin: 'principal',
+            size: 200,
+            modified_at: 1_700_000_000,
+        }]
+
+        const wrapper = mount(ResourceCardList, {
+            props: {
+                kind: 'template',
+                emptyText: 'No templates',
+                builtInHeadingText: 'Built-in',
+            },
+        })
+
+        await flushPromises()
+        await wrapper.find('[data-testid="resource-card-invoice.typ"]').trigger('click')
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        // No "edit" event ever leaves ResourceCardList.
+        expect(wrapper.emitted('edit')).toBeUndefined()
+        // The overlay itself is still showing (just in edit mode).
+        expect(wrapper.find('[data-testid="resource-overlay-dialog"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="resource-overlay-save"]').exists()).toBe(true)
         wrapper.unmount()
     })
 })

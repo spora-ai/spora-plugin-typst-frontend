@@ -9,31 +9,33 @@
  * modal; every action for that resource (View source, Edit,
  * Open Copy in Editor, Render, Delete) sits inside.
  *
- * Why a modal:
- *   - Cards are smaller and uniform (no per-card row count)
- *   - The source viewer + action bar can use the full width
- *     without pushing the grid into a single-column layout
- *   - Skill-shipped and principal-tier items can render the
- *     same shell — only the available actions differ
+ * Two modes:
+ *   - Viewing (default): SourceEditor in readOnly mode shows the
+ *     current source. Footer carries the action bar (Copy as
+ *     import, Render, Edit, Open Copy in Editor, Delete).
+ *   - Editing: triggered by the Edit button. SourceEditor swaps
+ *     to v-model (editable), footer swaps to Cancel + Save, and
+ *     the header title flips to "Editing template: …" so the
+ *     operator can see they're in an unsaved-state.
  *
- * Source viewer:
- *   Renders `<SourceEditor>` in readOnly mode so the operator
- *   sees the syntax-highlighted source and can scroll + select
- *   for copy, but cannot edit. Editing happens in
- *   `<TextResourceEditModal>` (a separate modal triggered by
- *   the Edit action below).
+ * The edit is in-place — clicking Edit does NOT open a second
+ * modal. Keeping a single `<dialog>` instance means one source
+ * of truth for the buffer and unambiguous keyboard handling
+ * (Esc / backdrop click close one overlay, not the question
+ * of which of two stacked ones).
  *
- * Action bar:
- *   - Edit             (principal-tier only)
- *   - Open Copy in Editor
- *   - Render           (examples only; ephemeral /preview)
- *   - Delete           (principal-tier only, with confirm)
+ * Save:
+ *   PUT /templates/{name} or /examples/{name} via the resource
+ *   store. On success the store's row is replaced in place
+ *   (size + mtime update), the overlay emits `saved` so the
+ *   parent can refresh its source cache, and the overlay
+ *   drops back to viewing mode.
  *
- * Mid-render the Render button is disabled and shows
- * "Rendering…". The result thumbnail renders below the source
- * viewer (replacing it once a render is present, since the
- * viewer is the focus when reading and the thumbnail is the
- * focus when previewing).
+ * Render:
+ *   Examples only. Caches the result so re-opening the overlay
+ *   shows the same thumbnail. The result panel replaces the
+ *   source viewer (they share the body region) — switching back
+ *   is one click on the source tab in the footer.
  *
  * Like the other modals: native `<dialog>` via showModal()
  * gives the UA-managed focus trap + ::backdrop. showModal() is
@@ -41,6 +43,7 @@
  * `open=true` so the watcher-on-change path doesn't fire).
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useResourceStore } from '../stores/resources'
 import SourceEditor from './SourceEditor.vue'
 import type { ResourceKind } from '../composables/useResourceCardList'
 import type { RenderedPreview } from '../composables/useResourceCardList'
@@ -69,15 +72,37 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
     (e: 'close'): void
-    (e: 'edit'): void
     (e: 'open-in-editor'): void
     (e: 'render'): void
     (e: 'delete'): void
+    /** Emitted on successful PUT so the parent can refresh its source cache. */
+    (e: 'saved', payload: { name: string; content: string }): void
 }>()
 
+const store = useResourceStore()
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
-const title = computed(() => `${props.kind === 'template' ? 'Template' : 'Example'}: ${props.name}`)
+// Edit-mode state. The buffer lives in `pendingContent` while
+// editing so cancelling drops the changes (props.content stays
+// untouched). On save, we PUT pendingContent and emit `saved`.
+const editing = ref(false)
+const pendingContent = ref(props.content)
+const saving = ref(false)
+const saveError = ref<string | null>(null)
+
+watch(() => props.name, () => {
+    // When the parent swaps the overlay to a different name,
+    // reset edit state so we don't carry over from the previous
+    // resource. The new content re-seeds pendingContent too.
+    editing.value = false
+    pendingContent.value = props.content
+    saveError.value = null
+})
+
+const title = computed(() => {
+    const label = props.kind === 'template' ? 'Template' : 'Example'
+    return editing.value ? `Editing ${label.toLowerCase()}: ${props.name}` : `${label}: ${props.name}`
+})
 const canEdit = computed(() => props.origin === 'principal')
 const canDelete = computed(() => props.origin === 'principal')
 const canRender = computed(() => props.kind === 'example')
@@ -123,7 +148,48 @@ async function copyImport(): Promise<void> {
     }
 }
 
+function startEdit(): void {
+    if (!canEdit.value) return
+    pendingContent.value = props.content
+    saveError.value = null
+    editing.value = true
+}
+
+function cancelEdit(): void {
+    editing.value = false
+    pendingContent.value = props.content
+    saveError.value = null
+}
+
+async function saveEdit(): Promise<void> {
+    if (saving.value) return
+    saving.value = true
+    saveError.value = null
+    try {
+        const updated = props.kind === 'template'
+            ? await store.updateTemplate(props.name, pendingContent.value)
+            : await store.updateExample(props.name, pendingContent.value)
+        if (updated === null) {
+            saveError.value = store.error ?? 'Failed to save.'
+            return
+        }
+        emit('saved', { name: props.name, content: pendingContent.value })
+        editing.value = false
+    } finally {
+        saving.value = false
+    }
+}
+
 function close(): void {
+    // Discard unsaved edits — the buffer belongs to the
+    // operator, and silently saving on close would surprise
+    // them. If they want to keep their edits, they can hit
+    // Save first.
+    if (editing.value) {
+        editing.value = false
+        pendingContent.value = props.content
+        saveError.value = null
+    }
     emit('close')
 }
 
@@ -185,6 +251,13 @@ onBeforeUnmount(() => {
                         data-testid="resource-overlay-title"
                     >{{ title }}</h2>
                     <span
+                        v-if="editing"
+                        class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded border border-amber-500/40 text-amber-700 bg-amber-500/10"
+                    >
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                        Unsaved
+                    </span>
+                    <span
                         v-if="origin === 'skill'"
                         class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded border border-border text-muted-foreground bg-muted"
                     >
@@ -217,7 +290,7 @@ onBeforeUnmount(() => {
                     class="h-full flex items-center justify-center text-sm text-destructive"
                 >{{ loadError }}</div>
                 <div
-                    v-else-if="rendered !== null"
+                    v-else-if="!editing && rendered !== null"
                     class="h-full flex flex-col gap-3"
                 >
                     <div class="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
@@ -247,66 +320,96 @@ onBeforeUnmount(() => {
                 </div>
                 <SourceEditor
                     v-else
-                    :model-value="content"
+                    :model-value="editing ? pendingContent : content"
                     :rows="22"
-                    read-only
-                    aria-label="Resource source (read-only)"
+                    :read-only="!editing"
+                    :aria-label="editing ? 'Edit resource source' : 'Resource source (read-only)'"
+                    @update:model-value="pendingContent = $event"
                 />
             </div>
 
             <div
-                v-if="renderError !== null"
+                v-if="!editing && renderError !== null"
                 class="px-3 py-2 text-xs text-destructive border-t border-border bg-destructive/5"
                 data-testid="resource-overlay-render-error"
             >{{ renderError }}</div>
 
+            <div
+                v-if="editing && saveError !== null"
+                class="px-3 py-2 text-xs text-destructive border-t border-border bg-destructive/5"
+                data-testid="resource-overlay-save-error"
+            >{{ saveError }}</div>
+
             <footer class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border">
-                <div class="flex items-center gap-2">
-                    <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground truncate max-w-xs">{{ snippetFor(name) }}</code>
-                    <button
-                        type="button"
-                        :class="[
-                            'shrink-0 rounded px-2 py-1 text-xs font-medium transition-colors',
-                            copied ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                        ]"
-                        :aria-label="`Copy Typst snippet for ${name}`"
-                        data-testid="resource-overlay-copy"
-                        @click="copyImport"
-                    >{{ copied ? 'Copied' : 'Copy' }}</button>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button
-                        v-if="canRender"
-                        type="button"
-                        class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
-                        :disabled="rendering || loading || content === ''"
-                        data-testid="resource-overlay-render"
-                        @click="emit('render')"
-                    >{{ rendering ? 'Rendering…' : rendered !== null ? 'Re-render' : 'Render' }}</button>
-                    <button
-                        v-if="canEdit"
-                        type="button"
-                        class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
-                        :disabled="loading || content === ''"
-                        data-testid="resource-overlay-edit"
-                        @click="emit('edit')"
-                    >Edit</button>
-                    <button
-                        type="button"
-                        class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
-                        :disabled="loading || content === ''"
-                        data-testid="resource-overlay-open-copy"
-                        @click="emit('open-in-editor')"
-                    >Open Copy in Editor</button>
-                    <button
-                        v-if="canDelete"
-                        type="button"
-                        class="px-3 py-1.5 rounded-md border border-destructive/50 text-destructive text-sm font-medium hover:bg-destructive/10 disabled:opacity-50"
-                        :disabled="loading"
-                        data-testid="resource-overlay-delete"
-                        @click="emit('delete')"
-                    >Delete</button>
-                </div>
+                <template v-if="editing">
+                    <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                        <code class="font-mono truncate max-w-xs">{{ name }}</code>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
+                            :disabled="saving"
+                            data-testid="resource-overlay-cancel"
+                            @click="cancelEdit"
+                        >Cancel</button>
+                        <button
+                            type="button"
+                            class="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+                            :disabled="saving || pendingContent === content"
+                            data-testid="resource-overlay-save"
+                            @click="saveEdit"
+                        >{{ saving ? 'Saving…' : 'Save' }}</button>
+                    </div>
+                </template>
+                <template v-else>
+                    <div class="flex items-center gap-2">
+                        <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground truncate max-w-xs">{{ snippetFor(name) }}</code>
+                        <button
+                            type="button"
+                            :class="[
+                                'shrink-0 rounded px-2 py-1 text-xs font-medium transition-colors',
+                                copied ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                            ]"
+                            :aria-label="`Copy Typst snippet for ${name}`"
+                            data-testid="resource-overlay-copy"
+                            @click="copyImport"
+                        >{{ copied ? 'Copied' : 'Copy' }}</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            v-if="canRender"
+                            type="button"
+                            class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
+                            :disabled="rendering || loading || content === ''"
+                            data-testid="resource-overlay-render"
+                            @click="emit('render')"
+                        >{{ rendering ? 'Rendering…' : rendered !== null ? 'Re-render' : 'Render' }}</button>
+                        <button
+                            v-if="canEdit"
+                            type="button"
+                            class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
+                            :disabled="loading || content === ''"
+                            data-testid="resource-overlay-edit"
+                            @click="startEdit"
+                        >Edit</button>
+                        <button
+                            type="button"
+                            class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
+                            :disabled="loading || content === ''"
+                            data-testid="resource-overlay-open-copy"
+                            @click="emit('open-in-editor')"
+                        >Open Copy in Editor</button>
+                        <button
+                            v-if="canDelete"
+                            type="button"
+                            class="px-3 py-1.5 rounded-md border border-destructive/50 text-destructive text-sm font-medium hover:bg-destructive/10 disabled:opacity-50"
+                            :disabled="loading"
+                            data-testid="resource-overlay-delete"
+                            @click="emit('delete')"
+                        >Delete</button>
+                    </div>
+                </template>
             </footer>
         </div>
     </dialog>

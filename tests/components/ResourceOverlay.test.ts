@@ -4,43 +4,58 @@
  *
  * Source editor is stubbed to a plain textarea (the overlay's
  * contract with it is readOnly + modelValue, which is easy to
- * fake). The composable's source + render caches are mocked
- * separately because the overlay reads them through props —
- * no composable call happens inside the component itself.
+ * fake). The resource store is mocked so save (PUT) calls can
+ * be observed deterministically.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import ResourceOverlay from '../../src/components/ResourceOverlay.vue'
 import type { RenderedPreview } from '../../src/composables/useResourceCardList'
+import type { ExampleResource, TemplateResource } from '../../src/types'
 
-// Stub SourceEditor with a readonly textarea so we don't pull in
-// the highlight.js pipeline. The overlay binds modelValue + rows
-// and forces readOnly=true; the stub mirrors both.
+// Stub SourceEditor with a readonly-aware textarea so we don't
+// pull in the highlight.js pipeline. The overlay binds
+// modelValue + readOnly; v-model updates flow through the
+// stub's @input handler.
 vi.mock('../../src/components/SourceEditor.vue', () => ({
     default: {
         name: 'SourceEditor',
         props: ['modelValue', 'rows', 'readOnly'],
-        template: '<textarea :value="modelValue" :rows="rows" :readonly="readOnly" />',
+        emits: ['update:modelValue'],
+        template: '<textarea :value="modelValue" :rows="rows" :readonly="readOnly" @input="$emit(\'update:modelValue\', $event.target.value)" />',
     },
 }))
 
 const noPreview: RenderedPreview | null = null
 
+const mockStore = {
+    templates: [] as TemplateResource[],
+    examples: [] as ExampleResource[],
+    loading: false,
+    uploading: false,
+    error: null as string | null,
+    updateTemplate: vi.fn(),
+    updateExample: vi.fn(),
+}
+
+vi.mock('../../src/stores/resources', () => ({
+    useResourceStore: () => mockStore,
+}))
+
 beforeEach(() => {
     document.body.innerHTML = ''
-    if (!('__sporaClipboardSilenced__' in navigator)) {
-        // happy-dom's navigator.clipboard.writeText rejects; the
-        // overlay's copy handler catches and tries the execCommand
-        // fallback (which also fails). The tests that exercise the
-        // Copy path just assert the click handler is wired — the
-        // actual write failure is silenced here so the test output
-        // stays clean.
-        // eslint-disable-next-line no-underscore-dangle
-        ;(navigator as unknown as { __sporaClipboardSilenced__: true }).__sporaClipboardSilenced__ = true
-    }
+    setActivePinia(createPinia())
+    mockStore.templates = []
+    mockStore.examples = []
+    mockStore.error = null
+    mockStore.loading = false
+    mockStore.uploading = false
+    mockStore.updateTemplate.mockReset()
+    mockStore.updateExample.mockReset()
 })
 
-describe('ResourceOverlay.vue', () => {
+describe('ResourceOverlay.vue — viewing mode (default)', () => {
     it('renders nothing when open=false', () => {
         const wrapper = mount(ResourceOverlay, {
             props: {
@@ -149,29 +164,8 @@ describe('ResourceOverlay.vue', () => {
         skill.unmount()
     })
 
-    it('emits edit on Edit click, but only for principal-tier', async () => {
-        const principal = mount(ResourceOverlay, {
-            props: {
-                open: true,
-                kind: 'template',
-                name: 'invoice.typ',
-                content: 'x',
-                origin: 'principal',
-                rendered: noPreview,
-                rendering: false,
-                renderError: null,
-                loading: false,
-                loadError: null,
-            },
-            attachTo: document.body,
-        })
-        await flushPromises()
-
-        await principal.find('[data-testid="resource-overlay-edit"]').trigger('click')
-        expect(principal.emitted('edit')).toBeDefined()
-        principal.unmount()
-
-        const skill = mount(ResourceOverlay, {
+    it('hides Edit + Delete buttons for skill-shipped items', async () => {
+        const wrapper = mount(ResourceOverlay, {
             props: {
                 open: true,
                 kind: 'template',
@@ -188,53 +182,9 @@ describe('ResourceOverlay.vue', () => {
         })
         await flushPromises()
 
-        // Edit button should not be present at all for skill items.
-        expect(skill.find('[data-testid="resource-overlay-edit"]').exists()).toBe(false)
-        expect(skill.emitted('edit')).toBeUndefined()
-        skill.unmount()
-    })
-
-    it('emits delete on Delete click, but only for principal-tier', async () => {
-        const principal = mount(ResourceOverlay, {
-            props: {
-                open: true,
-                kind: 'template',
-                name: 'invoice.typ',
-                content: 'x',
-                origin: 'principal',
-                rendered: noPreview,
-                rendering: false,
-                renderError: null,
-                loading: false,
-                loadError: null,
-            },
-            attachTo: document.body,
-        })
-        await flushPromises()
-
-        await principal.find('[data-testid="resource-overlay-delete"]').trigger('click')
-        expect(principal.emitted('delete')).toBeDefined()
-        principal.unmount()
-
-        const skill = mount(ResourceOverlay, {
-            props: {
-                open: true,
-                kind: 'template',
-                name: 'invoice.typ',
-                content: 'x',
-                origin: 'skill',
-                rendered: noPreview,
-                rendering: false,
-                renderError: null,
-                loading: false,
-                loadError: null,
-            },
-            attachTo: document.body,
-        })
-        await flushPromises()
-
-        expect(skill.find('[data-testid="resource-overlay-delete"]').exists()).toBe(false)
-        skill.unmount()
+        expect(wrapper.find('[data-testid="resource-overlay-edit"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="resource-overlay-delete"]').exists()).toBe(false)
+        wrapper.unmount()
     })
 
     it('shows the Render button only for examples, not templates', async () => {
@@ -320,6 +270,29 @@ describe('ResourceOverlay.vue', () => {
 
         await wrapper.find('[data-testid="resource-overlay-open-copy"]').trigger('click')
         expect(wrapper.emitted('open-in-editor')).toBeDefined()
+        wrapper.unmount()
+    })
+
+    it('emits delete when the Delete button is clicked (principal only)', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'x',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-delete"]').trigger('click')
+        expect(wrapper.emitted('delete')).toBeDefined()
         wrapper.unmount()
     })
 
@@ -428,6 +401,394 @@ describe('ResourceOverlay.vue', () => {
         const render = wrapper.find<HTMLButtonElement>('[data-testid="resource-overlay-render"]')
         expect((render.element as HTMLButtonElement).disabled).toBe(true)
         expect(render.text()).toBe('Rendering…')
+        wrapper.unmount()
+    })
+
+    it('shows the loading state when source is still fetching', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: '',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: true,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('Loading source…')
+        wrapper.unmount()
+    })
+
+    it('shows the loadError inline in the destructive style', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: '',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: 'server-said-no',
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('server-said-no')
+        wrapper.unmount()
+    })
+})
+
+describe('ResourceOverlay.vue — in-place edit', () => {
+    it('clicking Edit swaps the header title to "Editing template: …"', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'old',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="resource-overlay-title"]').text()).toBe(
+            'Editing template: invoice.typ',
+        )
+        wrapper.unmount()
+    })
+
+    it('clicking Edit swaps the footer to Cancel + Save', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'old',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="resource-overlay-cancel"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="resource-overlay-save"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="resource-overlay-edit"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="resource-overlay-delete"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="resource-overlay-open-copy"]').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('does NOT enter edit mode for skill-tier items', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'x',
+                origin: 'skill',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        // Edit button not present at all → no edit affordance for
+        // skill items.
+        expect(wrapper.find('[data-testid="resource-overlay-edit"]').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('Cancel restores the original content and exits edit mode', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'original',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        // Type new content into the SourceEditor stub.
+        const editor = wrapper.findComponent({ name: 'SourceEditor' })
+        await editor.setValue('changed')
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-cancel"]').trigger('click')
+        await flushPromises()
+
+        // Back in viewing mode, footer shows the action bar.
+        expect(wrapper.find('[data-testid="resource-overlay-edit"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="resource-overlay-cancel"]').exists()).toBe(false)
+        // The SourceEditor's modelValue reflects `props.content`
+        // (the original), not the cancelled buffer.
+        expect(editor.props('modelValue')).toBe('original')
+        wrapper.unmount()
+    })
+
+    it('Save PUTs the new content and emits "saved" with { name, content }', async () => {
+        const updated: TemplateResource = {
+            name: 'invoice.typ',
+            kind: 'template',
+            origin: 'principal',
+            size: 200,
+            modified_at: 1_700_000_000,
+        }
+        mockStore.updateTemplate.mockResolvedValueOnce(updated)
+
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'original',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        const editor = wrapper.findComponent({ name: 'SourceEditor' })
+        await editor.setValue('new content')
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-save"]').trigger('click')
+        await flushPromises()
+
+        expect(mockStore.updateTemplate).toHaveBeenCalledWith('invoice.typ', 'new content')
+        const saved = wrapper.emitted('saved')
+        expect(saved).toBeDefined()
+        expect(saved![0]![0]).toEqual({ name: 'invoice.typ', content: 'new content' })
+        // Exited edit mode after save.
+        expect(wrapper.find('[data-testid="resource-overlay-edit"]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('Save routes to updateExample when kind is "example"', async () => {
+        const updated: ExampleResource = {
+            name: 'headings.typ',
+            kind: 'example',
+            origin: 'principal',
+            size: 80,
+            modified_at: 1_700_000_000,
+        }
+        mockStore.updateExample.mockResolvedValueOnce(updated)
+
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'example',
+                name: 'headings.typ',
+                content: 'old',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        const editor = wrapper.findComponent({ name: 'SourceEditor' })
+        await editor.setValue('= New heading')
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-save"]').trigger('click')
+        await flushPromises()
+
+        expect(mockStore.updateExample).toHaveBeenCalledWith('headings.typ', '= New heading')
+        expect(mockStore.updateTemplate).not.toHaveBeenCalled()
+        wrapper.unmount()
+    })
+
+    it('Save surfaces the store error and keeps edit mode open', async () => {
+        mockStore.updateTemplate.mockResolvedValueOnce(null)
+        mockStore.error = 'server-said-no'
+
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'old',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        const editor = wrapper.findComponent({ name: 'SourceEditor' })
+        await editor.setValue('new content')
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-save"]').trigger('click')
+        await flushPromises()
+
+        const err = wrapper.find('[data-testid="resource-overlay-save-error"]')
+        expect(err.exists()).toBe(true)
+        expect(err.text()).toBe('server-said-no')
+        // Stayed in edit mode so the operator can fix and retry.
+        expect(wrapper.find('[data-testid="resource-overlay-save"]').exists()).toBe(true)
+        expect(wrapper.emitted('saved')).toBeUndefined()
+        wrapper.unmount()
+    })
+
+    it('Save is disabled while the buffer matches the original content', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'original',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        const save = wrapper.find<HTMLButtonElement>('[data-testid="resource-overlay-save"]')
+        expect((save.element as HTMLButtonElement).disabled).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('Switching to a different name while editing resets edit mode', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'a',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        const editor = wrapper.findComponent({ name: 'SourceEditor' })
+        await editor.setValue('changed')
+        await flushPromises()
+
+        // Parent swaps to a different name.
+        await wrapper.setProps({ name: 'letter.typ', content: 'b' })
+        await flushPromises()
+
+        // Edit mode exited, content reflects the new name.
+        expect(wrapper.find('[data-testid="resource-overlay-edit"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="resource-overlay-cancel"]').exists()).toBe(false)
+        expect(editor.props('modelValue')).toBe('b')
+        wrapper.unmount()
+    })
+
+    it('Closing while editing discards the unsaved buffer', async () => {
+        const wrapper = mount(ResourceOverlay, {
+            props: {
+                open: true,
+                kind: 'template',
+                name: 'invoice.typ',
+                content: 'original',
+                origin: 'principal',
+                rendered: noPreview,
+                rendering: false,
+                renderError: null,
+                loading: false,
+                loadError: null,
+            },
+            attachTo: document.body,
+        })
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-edit"]').trigger('click')
+        await flushPromises()
+
+        const editor = wrapper.findComponent({ name: 'SourceEditor' })
+        await editor.setValue('changed')
+        await flushPromises()
+
+        await wrapper.find('[data-testid="resource-overlay-close"]').trigger('click')
+        await flushPromises()
+
+        // The PUT must not have fired — close should not save.
+        expect(mockStore.updateTemplate).not.toHaveBeenCalled()
+        expect(wrapper.emitted('close')).toBeDefined()
         wrapper.unmount()
     })
 })

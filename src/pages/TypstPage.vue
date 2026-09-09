@@ -19,12 +19,10 @@
  *   `useTabsStore().goToEditor(prefill)` and the Editor consumes
  *   the prefill on its next mount via the tabs store.
  *
- * Edit modal:
- *   Templates + Examples tabs emit `edit` with
- *   `{ name, kind, content }`. We open the shared
- *   `TextResourceEditModal` — a wrapper around `<SourceEditor>`
- *   that PUTs the content back to /templates/{name} or
- *   /examples/{name} on Save.
+ * Edit is in-place inside `<ResourceOverlay>` — the overlay
+ * swaps its readOnly SourceEditor for an editable one when the
+ * operator clicks Edit, then PUTs via the resource store. The
+ * parent no longer needs an edit-modal layer.
  *
  * Principal scope:
  *   A single chip row between the tab nav and the tab content
@@ -33,7 +31,7 @@
  *   tier-1). Uploads stay tied to the caller's own principal
  *   (no override on POST).
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useResourceStore } from '../stores/resources'
 import { useImagesStore } from '../stores/images'
 import { useSourcesStore } from '../stores/sources'
@@ -48,7 +46,6 @@ import ExampleList from '../components/ExampleList.vue'
 import ImageUploader from '../components/ImageUploader.vue'
 import ImageList from '../components/ImageList.vue'
 import CompileForm from '../components/CompileForm.vue'
-import TextResourceEditModal from '../components/TextResourceEditModal.vue'
 import AlertBanner from '../components/AlertBanner.vue'
 import PrincipalChipRow from '../components/PrincipalChipRow.vue'
 
@@ -84,26 +81,6 @@ watch(
     },
     { immediate: true },
 )
-
-// Edit modal — driven by `edit` events from TemplateList /
-// ExampleList. The modal closes itself on Save success (the
-// ResourceCardList re-fetches its listing when the store refreshes).
-const editTarget = ref<{ kind: 'template' | 'example'; name: string; content: string } | null>(null)
-function onEdit(payload: { name: string; kind: 'template' | 'example'; content: string }): void {
-    editTarget.value = payload
-}
-function closeEditModal(): void {
-    editTarget.value = null
-}
-function onEditSaved(): void {
-    // Refresh the resource listing so the card reflects the new
-    // bytes; the editor-side composable cache for the same name
-    // also gets dropped so the next "View source" expansion reads
-    // from disk again.
-    void resourceStore.loadAll()
-    void sourcesStore.loadSources()
-    editTarget.value = null
-}
 
 // Templates + Examples tab's "Open Copy in Editor" — switch to the
 // Editor tab with the resource's source pre-filled as a copy. The
@@ -179,15 +156,12 @@ onMounted(async () => {
 
         <section v-else-if="tabsStore.activeTab === 'templates'" class="space-y-4">
             <TemplateUploader />
-            <TemplateList @edit="onEdit" />
+            <TemplateList @open-in-editor="onOpenInEditor" />
         </section>
 
         <section v-else-if="tabsStore.activeTab === 'examples'" class="space-y-4">
             <ExampleUploader />
-            <ExampleList
-                @edit="onEdit"
-                @open-in-editor="onOpenInEditor"
-            />
+            <ExampleList @open-in-editor="onOpenInEditor" />
         </section>
 
         <section v-else-if="tabsStore.activeTab === 'images'" class="space-y-4">
@@ -198,15 +172,5 @@ onMounted(async () => {
         <section v-else-if="tabsStore.activeTab === 'editor'" class="space-y-4">
             <CompileForm :host-context="props.hostContext" />
         </section>
-
-        <TextResourceEditModal
-            v-if="editTarget !== null"
-            :open="true"
-            :kind="editTarget.kind"
-            :name="editTarget.name"
-            :initial-content="editTarget.content"
-            @close="closeEditModal"
-            @saved="onEditSaved"
-        />
     </div>
 </template>
