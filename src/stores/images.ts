@@ -30,6 +30,7 @@ export const useImagesStore = defineStore('typst-images', () => {
         error.value = null
         try {
             images.value = await imagesApi.listImages(principalId.value ?? undefined)
+            hasLoadedOnce = true
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load images.'
         } finally {
@@ -41,7 +42,17 @@ export const useImagesStore = defineStore('typst-images', () => {
         uploading.value = true
         error.value = null
         try {
-            const image = await imagesApi.uploadImage(filename, mime, content)
+            const image = await imagesApi.uploadImage(filename, mime, content, principalId.value ?? undefined)
+            if (image.renamed === true) {
+                // Surface the rename so the operator sees the
+                // backend's filename policy in action instead of
+                // wondering where "typst-image-1789038367.jpg"
+                // came from.
+                lastRename.value = {
+                    from: image.original_name ?? null,
+                    to: image.name,
+                }
+            }
             await loadImages()
             return image
         } catch (e) {
@@ -52,11 +63,22 @@ export const useImagesStore = defineStore('typst-images', () => {
         }
     }
 
+    /**
+     * One-shot notice surfaced in `<ImageUploader>` when the
+     * backend reports the user-supplied filename was replaced by
+     * the `typst-image-<ts>.<ext>` fallback. Cleared by the
+     * component after the operator dismisses it.
+     */
+    const lastRename = ref<{ from: string | null; to: string } | null>(null)
+    function clearLastRename(): void {
+        lastRename.value = null
+    }
+
     async function removeImage(name: string): Promise<void> {
         uploading.value = true
         error.value = null
         try {
-            await imagesApi.deleteImage(name)
+            await imagesApi.deleteImage(name, principalId.value ?? undefined)
             images.value = images.value.filter((i) => i.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete image.'
@@ -70,12 +92,26 @@ export const useImagesStore = defineStore('typst-images', () => {
         error.value = null
     }
 
-    // Re-fetch when the principal chip changes.
+    // Re-fetch when the principal chip changes. Clear `images`
+    // synchronously (flush: 'sync') so the browser stops firing
+    // GETs for stale basenames under the new principal_id — the
+    // rendered `<img :src>` URL is reactive on principalId, so
+    // without a sync clear the in-flight GET rewrites to
+    // `?principal_id=<new>` with the OLD basename and 404s until
+    // the reload completes.
+    //
+    // `hasLoadedOnce` skips the initial chip-row set (when the
+    // store hasn't fetched anything yet) so onMounted's
+    // loadImages() isn't double-fired. We can't use
+    // `images.value.length === 0` as that gate — visiting a
+    // principal with zero images would permanently silence
+    // subsequent reloads back to a populated list.
+    let hasLoadedOnce = false
     watch(principalId, async () => {
-        if (images.value.length > 0) {
-            await loadImages()
-        }
-    })
+        if (!hasLoadedOnce) return
+        images.value = []
+        await loadImages()
+    }, { flush: 'sync' })
 
     return {
         images,
@@ -83,11 +119,13 @@ export const useImagesStore = defineStore('typst-images', () => {
         uploading,
         error,
         principalId,
+        lastRename,
         setPrincipalId,
         loadImages,
         uploadImage,
         removeImage,
         clearError,
+        clearLastRename,
     }
 })
 

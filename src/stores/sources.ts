@@ -72,6 +72,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
             // round trips and lets the chip switch stay instant.
             const fetched = await sourcesApi.listSources(principalId.value, 'all')
             sources.value = fetched
+            hasLoadedOnce = true
             recomputeKindCounts(fetched)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load playground sources.'
@@ -210,12 +211,19 @@ export const useSourcesStore = defineStore('typst-sources', () => {
     // Re-fetch when the principal chip changes (mirrors the resource
     // and image stores). The watcher only kicks off a reload when
     // the listing is already populated so the initial mount of the
-    // Playground doesn't trigger a double-load.
+    // Clear stale rows synchronously so the playground picker
+    // doesn't render names from the previous principal while the
+    // reload is in flight. `hasLoadedOnce` skips the initial
+    // chip-row set so onMounted's loadSources() isn't double-fired;
+    // we can't use `length === 0` as the gate (visiting an empty
+    // principal would silence subsequent reloads back to a
+    // populated list — mirrors the image-store regression).
+    let hasLoadedOnce = false
     watch(principalId, async () => {
-        if (sources.value.length > 0) {
-            await loadSources()
-        }
-    })
+        if (!hasLoadedOnce) return
+        sources.value = []
+        await loadSources()
+    }, { flush: 'sync' })
 
     return {
         sources,

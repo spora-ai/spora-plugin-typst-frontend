@@ -52,6 +52,10 @@ async function handleFile(file: File): Promise<void> {
     }
 }
 
+function dismissRename(): void {
+    store.clearLastRename()
+}
+
 async function onFileChange(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement
     const file = input.files?.[0]
@@ -103,6 +107,34 @@ async function onDrop(event: DragEvent): Promise<void> {
                 <label for="typst-image-upload" class="text-xs text-muted-foreground cursor-pointer">or drop one here</label>
             </div>
         </div>
+
+        <div
+            v-if="store.lastRename"
+            class="mt-3 flex items-start justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+            data-testid="image-rename-notice"
+        >
+            <div class="min-w-0">
+                <p class="font-medium">Filename renamed</p>
+                <p class="mt-0.5 text-amber-800/90">
+                    <span
+                        v-if="store.lastRename.from"
+                        class="font-mono"
+                    >"{{ store.lastRename.from }}"</span>
+                    <span v-else>Your upload</span>
+                    was saved as
+                    <span class="font-mono">"{{ store.lastRename.to }}"</span>
+                    because filenames are restricted to letters, digits, dot, underscore and dash. Rename the file before re-uploading to keep the original name.
+                </p>
+            </div>
+            <button
+                type="button"
+                class="shrink-0 text-amber-900/70 hover:text-amber-900"
+                aria-label="Dismiss rename notice"
+                data-testid="image-rename-dismiss"
+                @click="dismissRename"
+            >×</button>
+        </div>
+
         <input
             id="typst-image-upload"
             ref="fileInput"

@@ -88,7 +88,8 @@ function base64ToBlob(base64: string, mime: string): Blob {
  */
 export function useResourceCardList(kind: ResourceKind) {
     const store = useResourceStore()
-    const fetchSource = kind === 'template' ? getTemplate : getExample
+    const fetchSource: (name: string, principalId?: number) => Promise<string> =
+        kind === 'template' ? getTemplate : getExample
     const remove = kind === 'template'
         ? (n: string) => store.removeTemplate(n)
         : (n: string) => store.removeExample(n)
@@ -165,7 +166,13 @@ export function useResourceCardList(kind: ResourceKind) {
         loadingName.value = name
         loadError.value = null
         try {
-            const source = await fetchSource(name)
+            // Thread the store's current principalId — without it,
+            // GETs land in the caller's user-principal and a
+            // template uploaded to another principal surfaces as
+            // 404 NOT_FOUND ("Principal not visible to caller") in
+            // the overlay. The list call passes it, the per-name
+            // read used to forget it.
+            const source = await fetchSource(name, store.principalId ?? undefined)
             sourceByName.value = { ...sourceByName.value, [name]: source }
         } catch (e) {
             loadError.value = e instanceof ApiError ? e.message : `failed to read ${kind}`

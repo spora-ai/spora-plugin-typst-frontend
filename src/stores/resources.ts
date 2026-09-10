@@ -61,6 +61,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         error.value = null
         try {
             fonts.value = await fontsApi.listFonts(principalId.value ?? undefined)
+            hasLoadedOnce = true
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load fonts.'
         } finally {
@@ -73,6 +74,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         error.value = null
         try {
             templates.value = await templatesApi.listTemplates(principalId.value ?? undefined)
+            hasLoadedOnce = true
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load templates.'
         } finally {
@@ -85,6 +87,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         error.value = null
         try {
             examples.value = await examplesApi.listExamples(principalId.value ?? undefined)
+            hasLoadedOnce = true
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load examples.'
         } finally {
@@ -96,18 +99,32 @@ export const useResourceStore = defineStore('typst-resources', () => {
         await Promise.all([loadFonts(), loadTemplates(), loadExamples()])
     }
 
-    // Re-fetch when the principal changes.
+    // Re-fetch when the principal changes. Clear the per-kind
+    // collections synchronously so the rendered overlay source
+    // caches don't keep serving stale basenames while the reload
+    // is in flight (the overlay's `ensureSource` re-issues the
+    // GET with the new principalId against the previous basename
+    // otherwise).
+    //
+    // `hasLoadedOnce` skips the initial chip-row set so onMounted's
+    // loadAll() isn't double-fired. We can't use `length === 0`
+    // as the gate — visiting a principal with no rows would
+    // permanently silence subsequent reloads back to a populated
+    // list (mirrors the image-store empty-list regression).
+    let hasLoadedOnce = false
     watch(principalId, async () => {
-        if (fonts.value.length > 0 || templates.value.length > 0 || examples.value.length > 0) {
-            await loadAll()
-        }
-    })
+        if (!hasLoadedOnce) return
+        fonts.value = []
+        templates.value = []
+        examples.value = []
+        await loadAll()
+    }, { flush: 'sync' })
 
     async function uploadFont(name: string, content: string): Promise<FontResource | null> {
         uploading.value = true
         error.value = null
         try {
-            const font = await fontsApi.uploadFont(name, content)
+            const font = await fontsApi.uploadFont(name, content, principalId.value ?? undefined)
             fonts.value.push(font)
             return font
         } catch (e) {
@@ -122,7 +139,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const template = await templatesApi.uploadTemplate(name, content)
+            const template = await templatesApi.uploadTemplate(name, content, principalId.value ?? undefined)
             templates.value.push(template)
             return template
         } catch (e) {
@@ -137,7 +154,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const example = await examplesApi.uploadExample(name, content)
+            const example = await examplesApi.uploadExample(name, content, principalId.value ?? undefined)
             examples.value.push(example)
             return example
         } catch (e) {
@@ -152,7 +169,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const updated = await templatesApi.updateTemplate(name, content)
+            const updated = await templatesApi.updateTemplate(name, content, principalId.value ?? undefined)
             // Replace the row in place so the size / mtime on the
             // card reflects the new bytes without a full reload.
             const idx = templates.value.findIndex((t) => t.name === name)
@@ -174,7 +191,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const updated = await examplesApi.updateExample(name, content)
+            const updated = await examplesApi.updateExample(name, content, principalId.value ?? undefined)
             // Replace the row in place so the size / mtime on the
             // card reflects the new bytes without a full reload.
             const idx = examples.value.findIndex((ex) => ex.name === name)
@@ -221,7 +238,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            await fontsApi.deleteFont(name)
+            await fontsApi.deleteFont(name, principalId.value ?? undefined)
             fonts.value = fonts.value.filter((f) => f.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete font.'
@@ -235,7 +252,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            await templatesApi.deleteTemplate(name)
+            await templatesApi.deleteTemplate(name, principalId.value ?? undefined)
             templates.value = templates.value.filter((t) => t.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete template.'
@@ -249,7 +266,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            await examplesApi.deleteExample(name)
+            await examplesApi.deleteExample(name, principalId.value ?? undefined)
             examples.value = examples.value.filter((e) => e.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete example.'

@@ -131,9 +131,20 @@ describe('useResourceCardList — ensureSource', () => {
         await c.ensureSource('a.typ')
 
         expect(getTemplate).toHaveBeenCalledTimes(1)
-        expect(getTemplate).toHaveBeenCalledWith('a.typ')
+        expect(getTemplate).toHaveBeenCalledWith('a.typ', undefined)
         expect(c.sourceByName.value['a.typ']).toBe('= hello')
         expect(c.loadingName.value).toBeNull()
+    })
+
+    it('threads the store\'s principalId through to the read API', async () => {
+        vi.mocked(getTemplate).mockResolvedValueOnce('= hello')
+        const store = useResourceStore()
+        store.setPrincipalId(42)
+
+        const c = useResourceCardList('template')
+        await c.ensureSource('a.typ')
+
+        expect(getTemplate).toHaveBeenCalledWith('a.typ', 42)
     })
 
     it('uses getExample when the kind is "example"', async () => {
@@ -142,7 +153,7 @@ describe('useResourceCardList — ensureSource', () => {
         const c = useResourceCardList('example')
         await c.ensureSource('snippet.typ')
 
-        expect(getExample).toHaveBeenCalledWith('snippet.typ')
+        expect(getExample).toHaveBeenCalledWith('snippet.typ', undefined)
         expect(getTemplate).not.toHaveBeenCalled()
         expect(c.sourceByName.value['snippet.typ']).toBe('#let x = 1')
     })

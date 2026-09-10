@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { setApi } from '../../src/api/client'
 import { useSourcesStore } from '../../src/stores/sources'
 import { createPinia, setActivePinia } from 'pinia'
+import { flushPromises } from '@vue/test-utils'
 
 /**
  * Tests for the principal-scoped behaviour of the playground-sources
@@ -78,13 +79,13 @@ describe('stores/sources — principal scoping', () => {
     })
 
     it('re-fetches the listing when the principal changes after one is already loaded', async () => {
-        // The watcher's re-fetch is the integration glue between
-        // the chip row in {@see ../../src/pages/TypstPage.vue} and
-        // the listing. We exercise it via the store's `loadSources`
-        // call (the same call the watcher makes) — the watcher
-        // itself is part of the resources / images stores and
-        // exercised through their existing principal tests, so
-        // testing the same pattern here is redundant.
+        // The watcher on `principalId` (flush: 'sync') fires a
+        // reload every time the chip row picks a different
+        // principal. After the first loadSources() has populated
+        // the listing, switching principals must re-fetch — but
+        // switching to a principal with zero rows mustn't silence
+        // a subsequent switch back to a populated principal (the
+        // image-store regression that motivated hasLoadedOnce).
         let fetchCount = 0
         setApi({
             get: <T = unknown>(_path: string): Promise<T> => {
@@ -98,13 +99,15 @@ describe('stores/sources — principal scoping', () => {
         })
 
         const store = useSourcesStore()
-        await store.loadSources()
+        await store.loadSources()                                // 1: initial load
         store.setPrincipalId(7)
-        await store.loadSources()
+        await flushPromises()                                    // 2: watcher refetch
         store.setPrincipalId(8)
-        await store.loadSources()
+        await flushPromises()                                    // 3: watcher refetch
+        store.setPrincipalId(7)                                  // back to a populated one — must re-fetch
+        await flushPromises()                                    // 4: watcher refetch
 
-        expect(fetchCount).toBe(3)
+        expect(fetchCount).toBe(4)
     })
 
     it('openSource threads the current principal_id into the URL', async () => {
