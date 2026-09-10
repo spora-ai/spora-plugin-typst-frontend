@@ -91,12 +91,24 @@ export const useImagesStore = defineStore('typst-images', () => {
         error.value = null
     }
 
-    // Re-fetch when the principal chip changes.
+    // Re-fetch when the principal chip changes. Clear `images`
+    // synchronously (flush: 'sync') so the browser stops firing
+    // GETs for stale basenames under the new principal_id — the
+    // rendered `<img :src>` URL is reactive on principalId, so
+    // without a sync clear the in-flight GET rewrites to
+    // `?principal_id=<new>` with the OLD basename and 404s until
+    // the reload completes.
+    //
+    // The `length > 0` guard preserves the "don't fire on the
+    // initial chip-row set" behaviour the components rely on
+    // (the onMounted loadImages() call already populates the
+    // list, then a subsequent chip change is the only path that
+    // triggers the watcher).
     watch(principalId, async () => {
-        if (images.value.length > 0) {
-            await loadImages()
-        }
-    })
+        if (images.value.length === 0) return
+        images.value = []
+        await loadImages()
+    }, { flush: 'sync' })
 
     return {
         images,

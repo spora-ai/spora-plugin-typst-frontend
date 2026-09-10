@@ -96,11 +96,20 @@ export const useResourceStore = defineStore('typst-resources', () => {
         await Promise.all([loadFonts(), loadTemplates(), loadExamples()])
     }
 
-    // Re-fetch when the principal changes.
+    // Re-fetch when the principal changes. Clear the per-kind
+    // collections synchronously so the rendered overlay source
+    // caches don't keep serving stale basenames while the reload
+    // is in flight (the overlay's `ensureSource` re-issues the
+    // GET with the new principalId against the previous basename
+    // otherwise). The `length > 0` guard preserves the
+    // "don't fire on the initial chip-row set" behaviour the
+    // components rely on.
     watch(principalId, async () => {
-        if (fonts.value.length > 0 || templates.value.length > 0 || examples.value.length > 0) {
-            await loadAll()
-        }
+        if (fonts.value.length === 0 && templates.value.length === 0 && examples.value.length === 0) return
+        fonts.value = []
+        templates.value = []
+        examples.value = []
+        await loadAll()
     })
 
     async function uploadFont(name: string, content: string): Promise<FontResource | null> {

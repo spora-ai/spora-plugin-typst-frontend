@@ -210,11 +210,15 @@ export const useSourcesStore = defineStore('typst-sources', () => {
     // Re-fetch when the principal chip changes (mirrors the resource
     // and image stores). The watcher only kicks off a reload when
     // the listing is already populated so the initial mount of the
-    // Playground doesn't trigger a double-load.
+    // Clear stale rows synchronously so the playground picker
+    // doesn't render names from the previous principal while the
+    // reload is in flight. The `length > 0` guard preserves the
+    // "don't fire on the initial chip-row set" behaviour the
+    // playground component relies on.
     watch(principalId, async () => {
-        if (sources.value.length > 0) {
-            await loadSources()
-        }
+        if (sources.value.length === 0) return
+        sources.value = []
+        await loadSources()
     })
 
     return {
