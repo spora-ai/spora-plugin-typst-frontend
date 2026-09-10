@@ -9,8 +9,15 @@
  * Origin is implicit — every image in this view is principal-owned
  * (skill-shipped images don't exist on this side of the plugin:
  * tier-1 fonts and templates exist, tier-1 images don't).
+ *
+ * Image URLs are threaded through `withPrincipal(url, principalId)`
+ * because the backend's image-show endpoint falls back to the
+ * caller's user-principal when no `?principal_id=` is on the
+ * wire. Same root cause as the template-overlay bug: a list call
+ * threads the principal; the per-resource read forgotten it.
  */
 import { onMounted } from 'vue'
+import { withPrincipal } from '../api/client'
 import { useImagesStore } from '../stores/images'
 
 const store = useImagesStore()
@@ -51,6 +58,15 @@ async function confirmAndDelete(name: string, filename: string): Promise<void> {
 onMounted(() => {
     if ((store.images ?? []).length === 0) store.loadImages()
 })
+
+// Pin the store's principalId onto every image URL so the
+// thumbnail `<img src>` and the "Copy URL" button both resolve
+// against the principal the operator is currently viewing. Without
+// this, the image-show endpoint falls back to the caller's
+// user-principal and 404s on any image uploaded to a group.
+function scopedUrl(url: string): string {
+    return withPrincipal(url, store.principalId ?? undefined)
+}
 </script>
 
 <template>
@@ -69,12 +85,12 @@ onMounted(() => {
             class="rounded-lg border border-border bg-card overflow-hidden flex flex-col"
         >
             <div class="aspect-square bg-muted flex items-center justify-center">
-                <img
-                    :src="image.url"
-                    :alt="image.name"
-                    class="max-w-full max-h-full object-contain"
-                    loading="lazy"
-                />
+                    <img
+                        :src="scopedUrl(image.url)"
+                        :alt="image.name"
+                        class="max-w-full max-h-full object-contain"
+                        loading="lazy"
+                    />
             </div>
             <div class="p-3 flex-1 flex flex-col gap-2">
                 <div class="min-w-0">
@@ -89,7 +105,7 @@ onMounted(() => {
                     <button
                         type="button"
                         class="text-xs font-medium text-primary hover:text-primary/80"
-                        @click="copyUrl(image.url)"
+                        @click="copyUrl(scopedUrl(image.url))"
                     >Copy URL</button>
                     <button
                         type="button"

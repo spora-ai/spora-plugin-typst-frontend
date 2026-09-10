@@ -42,6 +42,16 @@ export const useImagesStore = defineStore('typst-images', () => {
         error.value = null
         try {
             const image = await imagesApi.uploadImage(filename, mime, content, principalId.value ?? undefined)
+            if (image.renamed === true) {
+                // Surface the rename so the operator sees the
+                // backend's filename policy in action instead of
+                // wondering where "typst-image-1789038367.jpg"
+                // came from.
+                lastRename.value = {
+                    from: image.original_name ?? null,
+                    to: image.name,
+                }
+            }
             await loadImages()
             return image
         } catch (e) {
@@ -50,6 +60,17 @@ export const useImagesStore = defineStore('typst-images', () => {
         } finally {
             uploading.value = false
         }
+    }
+
+    /**
+     * One-shot notice surfaced in `<ImageUploader>` when the
+     * backend reports the user-supplied filename was replaced by
+     * the `typst-image-<ts>.<ext>` fallback. Cleared by the
+     * component after the operator dismisses it.
+     */
+    const lastRename = ref<{ from: string | null; to: string } | null>(null)
+    function clearLastRename(): void {
+        lastRename.value = null
     }
 
     async function removeImage(name: string): Promise<void> {
@@ -83,11 +104,13 @@ export const useImagesStore = defineStore('typst-images', () => {
         uploading,
         error,
         principalId,
+        lastRename,
         setPrincipalId,
         loadImages,
         uploadImage,
         removeImage,
         clearError,
+        clearLastRename,
     }
 })
 

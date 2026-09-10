@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import ImageInsertModal from '../../src/components/ImageInsertModal.vue'
 import type { ImageResource, MediaArchiveImage } from '../../src/types'
 
@@ -36,6 +37,10 @@ function mediaImage(overrides: Partial<MediaArchiveImage>): MediaArchiveImage {
 
 beforeEach(() => {
     document.body.innerHTML = ''
+    // The modal reads the principalId from useImagesStore() to
+    // scope its plugin-image thumbnails; without an active Pinia
+    // the setup() throws on the store call.
+    setActivePinia(createPinia())
 })
 
 describe('ImageInsertModal.vue', () => {

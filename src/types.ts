@@ -52,6 +52,15 @@ export interface UploadedImage {
     size: number
     modified_at: number
     url: string
+    /**
+     * `true` when the user-supplied filename was replaced by the
+     * `typst-image-<ts>.<ext>` fallback (filename had characters
+     * outside the safe basename charset). The UI surfaces a
+     * rename notice when this is set.
+     */
+    renamed?: boolean
+    /** The user-supplied filename that was rejected, if any. */
+    original_name?: string | null
 }
 
 export type ResourceKind = 'font' | 'template' | 'example' | 'image'

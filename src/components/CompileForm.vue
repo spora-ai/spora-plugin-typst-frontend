@@ -68,7 +68,7 @@
  *   doesn't lose work.
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { ApiError } from '../api/client'
+import { ApiError, withPrincipal } from '../api/client'
 import { previewTypst, type PreviewResult } from '../api/preview'
 import { listImages } from '../api/images'
 import { listMediaArchiveImages } from '../api/media-archive'
@@ -304,7 +304,12 @@ function insertAtCursor(snippet: string): void {
 }
 
 function pickPluginImage(img: ImageResource): void {
-    insertAtCursor(`#image("${img.url}", width: 80%)\n`)
+    // Pin the store's current principalId onto the inserted URL —
+    // the Typst renderer (and any operator browsing the editor
+    // preview) needs `?principal_id=N` for non-default principals
+    // because the image-show endpoint falls back to the caller's
+    // user-principal otherwise.
+    insertAtCursor(`#image("${withPrincipal(img.url, principalsStore.selectedPrincipalId ?? undefined)}", width: 80%)\n`)
     closeImagePicker()
 }
 

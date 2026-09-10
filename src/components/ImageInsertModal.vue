@@ -20,11 +20,20 @@
  * `#image("url", width: 80%)` snippet and inserts it at the
  * caret.
  *
+ * The plugin-image thumbnails are threaded through
+ * `withPrincipal(url, principalId)` so the picker can show a
+ * preview for images uploaded to a non-default principal (the
+ * image-show endpoint falls back to the caller's user-principal
+ * when no `?principal_id=` is on the wire, same bug as the
+ * template-overlay read).
+ *
  * Native `<dialog>` for the UA-managed focus trap + ::backdrop.
  * `showModal()` is called from onMounted (the parent mounts
  * with `open=true` so the watcher-on-change path doesn't fire).
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { withPrincipal } from '../api/client'
+import { useImagesStore } from '../stores/images'
 import type { ImageResource, MediaArchiveImage } from '../types'
 
 const props = withDefaults(defineProps<{
@@ -49,6 +58,11 @@ const emit = defineEmits<{
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 const internalTab = ref<'plugin' | 'media'>(props.activeTab)
+const imagesStore = useImagesStore()
+
+function scopedPluginUrl(url: string): string {
+    return withPrincipal(url, imagesStore.principalId ?? undefined)
+}
 
 watch(() => props.activeTab, (tab) => {
     internalTab.value = tab
@@ -185,7 +199,7 @@ onBeforeUnmount(() => {
                     >
                         <div class="aspect-square bg-muted flex items-center justify-center">
                             <img
-                                :src="internalTab === 'plugin' ? (img as ImageResource).url : (img as MediaArchiveImage).asset_url"
+                                :src="internalTab === 'plugin' ? scopedPluginUrl((img as ImageResource).url) : (img as MediaArchiveImage).asset_url"
                                 :alt="(img as ImageResource).name ?? (img as MediaArchiveImage).filename"
                                 class="max-w-full max-h-full object-contain"
                                 loading="lazy"
