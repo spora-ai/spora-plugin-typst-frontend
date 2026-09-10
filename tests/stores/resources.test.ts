@@ -420,3 +420,44 @@ describe('stores/resources', () => {
         expect(store.error).toBe('Compilation failed: unknown variable')
     })
 })
+
+describe('resources store — principal scoping on writes', () => {
+    it('upload passes the store\'s principalId on the wire', async () => {
+        let postedPath = ''
+        let postedBody: unknown = null
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(path: string, body: unknown): Promise<T> => {
+                postedPath = path
+                postedBody = body
+                return Promise.resolve({ font: { name: 'Custom.otf', size: 0, kind: 'font', path: '', origin: 'principal' } } as T)
+            },
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+        const store = useResourceStore()
+        store.setPrincipalId(42)
+        await store.uploadFont('Custom.otf', 'base64-bytes')
+        expect(postedPath).toBe('/typst/fonts?principal_id=42')
+        expect(postedBody).toEqual({ name: 'Custom.otf', content: 'base64-bytes' })
+    })
+
+    it('destroy passes the store\'s principalId on the wire', async () => {
+        let deletedPath = ''
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(path: string): Promise<T> => {
+                deletedPath = path
+                return Promise.resolve(undefined as T)
+            },
+        })
+        const store = useResourceStore()
+        store.setPrincipalId(7)
+        await store.removeTemplate('X.typ')
+        expect(deletedPath).toBe('/typst/templates/X.typ?principal_id=7')
+    })
+})

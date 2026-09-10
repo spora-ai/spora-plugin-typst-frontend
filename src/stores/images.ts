@@ -41,7 +41,7 @@ export const useImagesStore = defineStore('typst-images', () => {
         uploading.value = true
         error.value = null
         try {
-            const image = await imagesApi.uploadImage(filename, mime, content)
+            const image = await imagesApi.uploadImage(filename, mime, content, principalId.value ?? undefined)
             await loadImages()
             return image
         } catch (e) {
@@ -56,7 +56,7 @@ export const useImagesStore = defineStore('typst-images', () => {
         uploading.value = true
         error.value = null
         try {
-            await imagesApi.deleteImage(name)
+            await imagesApi.deleteImage(name, principalId.value ?? undefined)
             images.value = images.value.filter((i) => i.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete image.'
