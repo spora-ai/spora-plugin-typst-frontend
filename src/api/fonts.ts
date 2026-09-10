@@ -6,34 +6,32 @@
  *
  * Wire shape matches `TypstFontController` in the backend plugin:
  *   GET    /typst/fonts[?principal_id=N]  → { data: { fonts: FontResource[] } }
- *   POST   /typst/fonts                    body { name, content (base64) } → 201 + { data: { font: {...} } }
- *   DELETE /typst/fonts/{name}             → 204
+ *   POST   /typst/fonts[?principal_id=N]  body { name, content (base64) } → 201 + { data: { font: {...} } }
+ *   DELETE /typst/fonts/{name}[?principal_id=N] → 204
  *
- * `listFonts` accepts an optional `principalId` — when set, the
- * backend scopes the listing to that principal (must be in the
- * caller's visible principals). POST stays tied to the caller's
- * own principal (uploads are always owner's).
+ * `principalId` mirrors the chip-row selector on `?principal_id=N`.
+ * All write/read methods accept it so uploads land in the scope
+ * the operator is currently viewing — without it the backend pins
+ * writes to the caller's user-principal and uploads in another
+ * principal "vanish after reload".
  */
-import { getApi } from './client'
+import { getApi, withPrincipal } from './client'
 import type { FontResource } from '../types'
 
 export async function listFonts(principalId?: number): Promise<FontResource[]> {
     const api = getApi()
-    const path = principalId !== undefined && principalId !== null
-        ? `/typst/fonts?principal_id=${encodeURIComponent(String(principalId))}`
-        : '/typst/fonts'
-    const result = await api.get<{ fonts: FontResource[] }>(path)
+    const result = await api.get<{ fonts: FontResource[] }>(withPrincipal('/typst/fonts', principalId))
     return result.fonts
 }
 
-export async function uploadFont(name: string, content: string): Promise<FontResource> {
+export async function uploadFont(name: string, content: string, principalId?: number): Promise<FontResource> {
     const api = getApi()
-    const result = await api.post<{ font: FontResource }>('/typst/fonts', { name, content })
+    const result = await api.post<{ font: FontResource }>(withPrincipal('/typst/fonts', principalId), { name, content })
     return result.font
 }
 
-export async function deleteFont(name: string): Promise<void> {
+export async function deleteFont(name: string, principalId?: number): Promise<void> {
     const api = getApi()
-    await api.delete(`/typst/fonts/${encodeURIComponent(name)}`)
+    await api.delete(withPrincipal(`/typst/fonts/${encodeURIComponent(name)}`, principalId))
 }
 

@@ -3,26 +3,29 @@
  *
  * Wire shape matches `TypstTemplateController`:
  *   GET    /typst/templates[?principal_id=N]  → { data: { templates: TemplateResource[] } }
- *   GET    /typst/templates/{name}            → text/plain body (the .typ source)
- *   POST   /typst/templates                    body { name, content } → 201 + { data: { template: {...} } }
- *   PUT    /typst/templates/{name}             body { content } → 200 + { data: { template: {...} } }
- *   DELETE /typst/templates/{name}             → 204
+ *   GET    /typst/templates/{name}[?principal_id=N] → text/plain body (the .typ source)
+ *   POST   /typst/templates[?principal_id=N]   body { name, content } → 201 + { data: { template: {...} } }
+ *   PUT    /typst/templates/{name}[?principal_id=N] body { content } → 200 + { data: { template: {...} } }
+ *   DELETE /typst/templates/{name}[?principal_id=N] → 204
  *
  * Templates are filesystem-backed UTF-8 source files under
  * `<storage>/typst/templates/<principal>/`. The wire URL is
  * `/typst/templates` (matching the backend controller). The plugin
  * keeps a parallel `/typst/examples` endpoint for the smaller
  * pattern-snippet kind — {@see ./examples}.
+ *
+ * `principalId` mirrors the chip-row selector on `?principal_id=N`.
+ * All write/read methods accept it so uploads land in the scope
+ * the operator is currently viewing — without it the backend pins
+ * writes to the caller's user-principal and uploads in another
+ * principal "vanish after reload".
  */
-import { getApi, fetchText } from './client'
+import { getApi, fetchText, withPrincipal } from './client'
 import type { TemplateResource } from '../types'
 
 export async function listTemplates(principalId?: number): Promise<TemplateResource[]> {
     const api = getApi()
-    const path = principalId !== undefined && principalId !== null
-        ? `/typst/templates?principal_id=${encodeURIComponent(String(principalId))}`
-        : '/typst/templates'
-    const result = await api.get<{ templates: TemplateResource[] }>(path)
+    const result = await api.get<{ templates: TemplateResource[] }>(withPrincipal('/typst/templates', principalId))
     return result.templates
 }
 
@@ -34,13 +37,13 @@ export async function listTemplates(principalId?: number): Promise<TemplateResou
  * body. Used by the "View source" preview in the Templates card
  * list.
  */
-export async function getTemplate(name: string): Promise<string> {
-    return await fetchText(`/typst/templates/${encodeURIComponent(name)}`)
+export async function getTemplate(name: string, principalId?: number): Promise<string> {
+    return await fetchText(withPrincipal(`/typst/templates/${encodeURIComponent(name)}`, principalId))
 }
 
-export async function uploadTemplate(name: string, content: string): Promise<TemplateResource> {
+export async function uploadTemplate(name: string, content: string, principalId?: number): Promise<TemplateResource> {
     const api = getApi()
-    const result = await api.post<{ template: TemplateResource }>('/typst/templates', { name, content })
+    const result = await api.post<{ template: TemplateResource }>(withPrincipal('/typst/templates', principalId), { name, content })
     return result.template
 }
 
@@ -50,16 +53,16 @@ export async function uploadTemplate(name: string, content: string): Promise<Tem
  * and `modified_at` reflect the new bytes and `name` itself is
  * immutable on this path (rename is a delete + upload).
  */
-export async function updateTemplate(name: string, content: string): Promise<TemplateResource> {
+export async function updateTemplate(name: string, content: string, principalId?: number): Promise<TemplateResource> {
     const api = getApi()
     const result = await api.put<{ template: TemplateResource }>(
-        `/typst/templates/${encodeURIComponent(name)}`,
+        withPrincipal(`/typst/templates/${encodeURIComponent(name)}`, principalId),
         { content },
     )
     return result.template
 }
 
-export async function deleteTemplate(name: string): Promise<void> {
+export async function deleteTemplate(name: string, principalId?: number): Promise<void> {
     const api = getApi()
-    await api.delete(`/typst/templates/${encodeURIComponent(name)}`)
+    await api.delete(withPrincipal(`/typst/templates/${encodeURIComponent(name)}`, principalId))
 }

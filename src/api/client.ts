@@ -92,3 +92,19 @@ export async function fetchText(path: string): Promise<string> {
     }
     return await response.text()
 }
+
+/**
+ * Append `?principal_id=N` to a path when the caller passed one.
+ *
+ * Centralised so the four resource API clients stay in lockstep on
+ * the principal-scoping wire shape (and so the host's pre-existing
+ * `sources.ts` client keeps working with its own copy — see the
+ * comment there).
+ */
+export function withPrincipal(path: string, principalId: number | null | undefined): string {
+    if (principalId === undefined || principalId === null) {
+        return path
+    }
+    const separator = path.includes('?') ? '&' : '?'
+    return `${path}${separator}principal_id=${encodeURIComponent(String(principalId))}`
+}

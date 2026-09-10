@@ -107,7 +107,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const font = await fontsApi.uploadFont(name, content)
+            const font = await fontsApi.uploadFont(name, content, principalId.value ?? undefined)
             fonts.value.push(font)
             return font
         } catch (e) {
@@ -122,7 +122,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const template = await templatesApi.uploadTemplate(name, content)
+            const template = await templatesApi.uploadTemplate(name, content, principalId.value ?? undefined)
             templates.value.push(template)
             return template
         } catch (e) {
@@ -137,7 +137,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const example = await examplesApi.uploadExample(name, content)
+            const example = await examplesApi.uploadExample(name, content, principalId.value ?? undefined)
             examples.value.push(example)
             return example
         } catch (e) {
@@ -152,7 +152,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const updated = await templatesApi.updateTemplate(name, content)
+            const updated = await templatesApi.updateTemplate(name, content, principalId.value ?? undefined)
             // Replace the row in place so the size / mtime on the
             // card reflects the new bytes without a full reload.
             const idx = templates.value.findIndex((t) => t.name === name)
@@ -174,7 +174,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            const updated = await examplesApi.updateExample(name, content)
+            const updated = await examplesApi.updateExample(name, content, principalId.value ?? undefined)
             // Replace the row in place so the size / mtime on the
             // card reflects the new bytes without a full reload.
             const idx = examples.value.findIndex((ex) => ex.name === name)
@@ -221,7 +221,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            await fontsApi.deleteFont(name)
+            await fontsApi.deleteFont(name, principalId.value ?? undefined)
             fonts.value = fonts.value.filter((f) => f.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete font.'
@@ -235,7 +235,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            await templatesApi.deleteTemplate(name)
+            await templatesApi.deleteTemplate(name, principalId.value ?? undefined)
             templates.value = templates.value.filter((t) => t.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete template.'
@@ -249,7 +249,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         uploading.value = true
         error.value = null
         try {
-            await examplesApi.deleteExample(name)
+            await examplesApi.deleteExample(name, principalId.value ?? undefined)
             examples.value = examples.value.filter((e) => e.name !== name)
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to delete example.'
