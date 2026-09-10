@@ -162,21 +162,19 @@ function onHeadingInsert(level: number): void {
  * caret navigation both trigger a refresh.
  */
 watchEffect((onCleanup) => {
+    // editorRef is null until the SourceEditor mounts and exposes
+    // itself; the optional chain returns `undefined`, not `null`.
+    // The watchEffect re-runs once CompileForm populates the ref,
+    // attaching the listeners on the second pass.
     const ta = props.editorRef?.textarea
-    if (ta === null) return
-    // Non-null assertion is safe — the early return above
-    // already narrowed the optional chain. TS doesn't carry
-    // the narrowing across subsequent property accesses on
-    // a reactive prop, so the assertion is needed to make
-    // the closure handlers below type-check.
-    const ta2 = ta!
+    if (ta == null) return
     const handler = (): void => refreshCurrentLevel()
     refreshCurrentLevel()
-    ta2.addEventListener('input', handler)
-    ta2.addEventListener('select', handler)
+    ta.addEventListener('input', handler)
+    ta.addEventListener('select', handler)
     onCleanup(() => {
-        ta2.removeEventListener('input', handler)
-        ta2.removeEventListener('select', handler)
+        ta.removeEventListener('input', handler)
+        ta.removeEventListener('select', handler)
     })
 })
 
