@@ -61,6 +61,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         error.value = null
         try {
             fonts.value = await fontsApi.listFonts(principalId.value ?? undefined)
+            hasLoadedOnce = true
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load fonts.'
         } finally {
@@ -73,6 +74,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         error.value = null
         try {
             templates.value = await templatesApi.listTemplates(principalId.value ?? undefined)
+            hasLoadedOnce = true
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load templates.'
         } finally {
@@ -85,6 +87,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
         error.value = null
         try {
             examples.value = await examplesApi.listExamples(principalId.value ?? undefined)
+            hasLoadedOnce = true
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load examples.'
         } finally {
@@ -101,16 +104,21 @@ export const useResourceStore = defineStore('typst-resources', () => {
     // caches don't keep serving stale basenames while the reload
     // is in flight (the overlay's `ensureSource` re-issues the
     // GET with the new principalId against the previous basename
-    // otherwise). The `length > 0` guard preserves the
-    // "don't fire on the initial chip-row set" behaviour the
-    // components rely on.
+    // otherwise).
+    //
+    // `hasLoadedOnce` skips the initial chip-row set so onMounted's
+    // loadAll() isn't double-fired. We can't use `length === 0`
+    // as the gate — visiting a principal with no rows would
+    // permanently silence subsequent reloads back to a populated
+    // list (mirrors the image-store empty-list regression).
+    let hasLoadedOnce = false
     watch(principalId, async () => {
-        if (fonts.value.length === 0 && templates.value.length === 0 && examples.value.length === 0) return
+        if (!hasLoadedOnce) return
         fonts.value = []
         templates.value = []
         examples.value = []
         await loadAll()
-    })
+    }, { flush: 'sync' })
 
     async function uploadFont(name: string, content: string): Promise<FontResource | null> {
         uploading.value = true

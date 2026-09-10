@@ -30,6 +30,7 @@ export const useImagesStore = defineStore('typst-images', () => {
         error.value = null
         try {
             images.value = await imagesApi.listImages(principalId.value ?? undefined)
+            hasLoadedOnce = true
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to load images.'
         } finally {
@@ -99,13 +100,15 @@ export const useImagesStore = defineStore('typst-images', () => {
     // `?principal_id=<new>` with the OLD basename and 404s until
     // the reload completes.
     //
-    // The `length > 0` guard preserves the "don't fire on the
-    // initial chip-row set" behaviour the components rely on
-    // (the onMounted loadImages() call already populates the
-    // list, then a subsequent chip change is the only path that
-    // triggers the watcher).
+    // `hasLoadedOnce` skips the initial chip-row set (when the
+    // store hasn't fetched anything yet) so onMounted's
+    // loadImages() isn't double-fired. We can't use
+    // `images.value.length === 0` as that gate — visiting a
+    // principal with zero images would permanently silence
+    // subsequent reloads back to a populated list.
+    let hasLoadedOnce = false
     watch(principalId, async () => {
-        if (images.value.length === 0) return
+        if (!hasLoadedOnce) return
         images.value = []
         await loadImages()
     }, { flush: 'sync' })
