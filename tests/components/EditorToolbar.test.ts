@@ -239,4 +239,34 @@ describe('EditorToolbar.vue', () => {
         expect(wrapper.text()).toContain('Insert Template')
         wrapper.unmount()
     })
+
+    it('mounts cleanly when editorRef is null (CompileForm initial render)', () => {
+        // First CompileForm render: editorRef is null until SourceEditor mounts.
+        const wrapper = mount(EditorToolbar, {
+            props: { editorRef: null },
+        })
+
+        expect(wrapper.find('[data-testid="editor-tool-bold"]').exists()).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('mounts cleanly when editorRef.textarea is null (before SourceEditor mounts)', () => {
+        // editorRef populated but its internal textareaRef is still null.
+        const stub: StubEditor = {
+            getSelection: vi.fn(() => null),
+            getHeadingLevelAtCaret: vi.fn(() => null),
+            insertAtCaret: vi.fn(),
+            insertAtLineStart: vi.fn(),
+            applyHeadingAtCaret: vi.fn(),
+            focus: vi.fn(),
+            textarea: null,
+        }
+
+        const wrapper = mount(EditorToolbar, {
+            props: { editorRef: stub },
+        })
+
+        expect(wrapper.find('[data-testid="editor-tool-bold"]').exists()).toBe(true)
+        wrapper.unmount()
+    })
 })
