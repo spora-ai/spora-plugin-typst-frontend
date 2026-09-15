@@ -39,11 +39,19 @@ body,
  *
  * Light/dark follows the host's `.dark` class convention
  * (`<html class="dark">` toggles via the host's theme switcher).
+ *
+ * `font-family` matches the playground editor's
+ * `.typst-editor__highlight` / `.typst-editor__textarea` chain
+ * exactly. The editor relies on the highlighted `<code>` and the
+ * transparent `<textarea>` above it using identical glyph metrics
+ * so click positions translate to the right caret column — a
+ * different fallback (e.g. OS-default monospace on Linux when
+ * Liberation Mono is missing from the chain) drifts the selection.
  */
 .hljs {
     background: transparent;
     color: #1f2937;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 .hljs-comment { color: #6b7280; font-style: italic; }
 .hljs-string { color: #047857; }
