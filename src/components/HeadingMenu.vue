@@ -163,6 +163,7 @@ onBeforeUnmount(() => {
             role="menu"
             data-testid="heading-menu-popover"
             @click.stop
+            @keydown.esc="close"
         >
             <button
                 v-for="level in levels"

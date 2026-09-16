@@ -92,6 +92,7 @@ onBeforeUnmount(() => {
         :aria-label="ariaLabel"
         data-testid="template-insertion-modal"
         @click="onDialogClick"
+        @keydown="onKey"
     >
         <div
             class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
