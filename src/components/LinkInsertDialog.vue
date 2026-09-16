@@ -106,6 +106,7 @@ onBeforeUnmount(() => {
         :aria-label="ariaLabel"
         data-testid="link-insert-dialog"
         @click="onDialogClick"
+        @keydown="onKey"
     >
         <form
             class="relative w-full max-w-md rounded-lg border border-border bg-card shadow-2xl flex flex-col"

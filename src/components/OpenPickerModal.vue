@@ -332,6 +332,7 @@ onBeforeUnmount(() => {
     aria-label="Open playground file"
     data-testid="open-picker-dialog"
     @click="onDialogClick"
+    @keydown="onKey"
   >
     <div
       class="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-2xl flex flex-col"
