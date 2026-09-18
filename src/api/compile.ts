@@ -2,19 +2,25 @@
  * Playground compile API client.
  *
  * Wire shape matches `TypstCompileController` in the backend:
- *   POST /typst/compile
+ *   POST /typst/compile[?principal_id=N]
  *     body { source, name?, format?, page?, dpi? }
  *     → 200 + { data: CompileResult }
  *     → 422 { error: { code, message, diagnostics? } }
  *     → 401 / 503 on auth / producer-missing.
  *
- * `name` is the user-chosen filename. The controller upserts the
- * parent row by `(principal_id, tool_name='typst.playground', filename)`,
- * so a second compile of the same name overwrites the parent in
- * place rather than stacking a fresh row in the media archive. The
- * returned `source_id` is stable for the lifetime of the file.
+ * `name` is the user-chosen filename. The controller inserts a
+ * fresh `media_assets` row per call (sibling-row semantics on
+ * filename collisions), then keys the `media_derivatives` join off
+ * that row's id. The returned `source_id` is stable for the
+ * lifetime of the file.
+ *
+ * `principalId` threads the chip-row's selected principal onto the
+ * URL as `?principal_id=N`. Without it the backend falls back to
+ * the caller — fine for the user-principal default, wrong for
+ * group-scoped renders where `#include "templates/foo.typ"` should
+ * resolve against the group's storage.
  */
-import { getApi } from './client'
+import { getApi, withPrincipal } from './client'
 import type { CompileResult } from '../types'
 
 export async function compileTypst(opts: {
@@ -23,15 +29,19 @@ export async function compileTypst(opts: {
     format?: 'pdf' | 'png' | 'svg'
     page?: number
     dpi?: number
+    principalId?: number | null
 }): Promise<CompileResult> {
     const api = getApi()
-    const result = await api.post<CompileResult>('/typst/compile', {
-        source: opts.source,
-        name: opts.name,
-        format: opts.format ?? 'pdf',
-        page: opts.page,
-        dpi: opts.dpi,
-    })
+    const result = await api.post<CompileResult>(
+        withPrincipal('/typst/compile', opts.principalId),
+        {
+            source: opts.source,
+            name: opts.name,
+            format: opts.format ?? 'pdf',
+            page: opts.page,
+            dpi: opts.dpi,
+        },
+    )
     return result
 }
 

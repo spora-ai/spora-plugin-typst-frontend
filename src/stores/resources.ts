@@ -218,6 +218,14 @@ export const useResourceStore = defineStore('typst-resources', () => {
      * Defaults to `png` at 144 PPI so the inline thumb is the same
      * shape across cards; callers can override for a sharper
      * preview when needed.
+     *
+     * Threads `principalId.value` (set by the chip row via
+     * `setPrincipalId()`) onto the URL so the backend's world
+     * factory resolves `#include "templates/foo.typ"` against the
+     * chip's selected principal rather than the caller's
+     * user-principal. Examples owned by a group render against the
+     * group's templates directory; the previous shape dropped the
+     * principal on the floor and surfaced "file not found" instead.
      */
     async function renderExample(
         name: string,
@@ -227,7 +235,13 @@ export const useResourceStore = defineStore('typst-resources', () => {
     ): Promise<PreviewResult | null> {
         error.value = null
         try {
-            return await previewApi.previewTypst({ source: content, name, format, ppi })
+            return await previewApi.previewTypst({
+                source: content,
+                name,
+                format,
+                ppi,
+                principalId: principalId.value,
+            })
         } catch (e) {
             error.value = e instanceof ApiError ? e.message : 'Failed to render example preview.'
             return null

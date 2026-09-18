@@ -419,6 +419,61 @@ describe('stores/resources', () => {
         expect(result).toBeNull()
         expect(store.error).toBe('Compilation failed: unknown variable')
     })
+
+    it('renderExample threads the store\'s principalId onto the preview URL (group render regression)', async () => {
+        // Without this threading, a group-owned example rendered from
+        // the card grid would compile under the caller's user-principal
+        // and `#include "templates/foo.typ"` would surface as
+        // "file not found" against the user-principal's templates dir.
+        let postedPath = ''
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(path: string, _body: unknown): Promise<T> => {
+                postedPath = path
+                return Promise.resolve({
+                    bytes: '',
+                    mime: 'image/png',
+                    format: 'png',
+                    source_name: 'group.typ',
+                    width: 320,
+                    height: 200,
+                } as T)
+            },
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+        const store = useResourceStore()
+        store.setPrincipalId(42)
+        const result = await store.renderExample('group.typ', '#include "templates/foo.typ"')
+        expect(result).not.toBeNull()
+        expect(postedPath).toBe('/typst/preview?principal_id=42')
+    })
+
+    it('renderExample omits ?principal_id when no principal is set', async () => {
+        let postedPath = ''
+        setApi({
+            get: <T = unknown>(_path: string): Promise<T> => Promise.resolve({} as T),
+            post: <T = unknown>(path: string, _body: unknown): Promise<T> => {
+                postedPath = path
+                return Promise.resolve({
+                    bytes: '',
+                    mime: 'image/png',
+                    format: 'png',
+                    source_name: 'me.typ',
+                    width: 1,
+                    height: 1,
+                } as T)
+            },
+            put: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            patch: <T = unknown>(_path: string, _body: unknown): Promise<T> => Promise.resolve({} as T),
+            delete: <T = unknown>(_path: string): Promise<T> => Promise.resolve(undefined as T),
+        })
+        const store = useResourceStore()
+        await store.renderExample('me.typ', '= Hi')
+        expect(postedPath).toBe('/typst/preview')
+        expect(postedPath).not.toContain('principal_id')
+    })
 })
 
 describe('resources store — principal scoping on writes', () => {

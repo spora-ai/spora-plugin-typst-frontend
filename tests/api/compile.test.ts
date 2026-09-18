@@ -70,6 +70,40 @@ describe('api/compile', () => {
         expect(postedBody).toEqual({ source: '= Hi', format: 'png', page: 1, dpi: 200 })
     })
 
+    it('omits ?principal_id when no principal is supplied', async () => {
+        let postedPath = ''
+        setApi(makeStubApi((path) => {
+            postedPath = path
+            return { derivative_id: 'x', asset_url: '/api/v1/assets/x.pdf', format: 'pdf', mime: 'application/pdf', size: 0, width: null, height: null, preview_url: null }
+        }))
+
+        await compileTypst({ source: '= Hi' })
+        expect(postedPath).toBe('/typst/compile')
+        expect(postedPath).not.toContain('principal_id')
+    })
+
+    it('threads principalId onto the URL as ?principal_id=N (group render)', async () => {
+        let postedPath = ''
+        setApi(makeStubApi((path) => {
+            postedPath = path
+            return { derivative_id: 'x', asset_url: '/api/v1/assets/x.pdf', format: 'pdf', mime: 'application/pdf', size: 0, width: null, height: null, preview_url: null }
+        }))
+
+        await compileTypst({ source: '= Hi', principalId: 42 })
+        expect(postedPath).toBe('/typst/compile?principal_id=42')
+    })
+
+    it('omits ?principal_id when principalId is explicitly null', async () => {
+        let postedPath = ''
+        setApi(makeStubApi((path) => {
+            postedPath = path
+            return { derivative_id: 'x', asset_url: '/api/v1/assets/x.pdf', format: 'pdf', mime: 'application/pdf', size: 0, width: null, height: null, preview_url: null }
+        }))
+
+        await compileTypst({ source: '= Hi', principalId: null })
+        expect(postedPath).toBe('/typst/compile')
+    })
+
     it('propagates ApiError from the controller', async () => {
         setApi(makeStubApi(() => {
             throw new ApiError('Compilation failed', 'COMPILATION_FAILED', 422)
