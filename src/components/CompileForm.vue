@@ -420,6 +420,12 @@ function base64ToBlob(base64: string, mime: string): Blob {
  * Used by the Preview button (footer). For the Save & Render
  * path, the button handler calls this AFTER the createSource /
  * saveSource call returns so the same render pipeline is reused.
+ *
+ * Threads the chip-row's selected principal onto the URL so the
+ * backend's world factory resolves `#include "templates/foo.typ"`
+ * against the operator's chosen scope. Without it the preview
+ * controller falls back to the caller's user-principal and group
+ * templates surface as "file not found".
  */
 async function render(): Promise<void> {
     busy.value = true
@@ -433,6 +439,7 @@ async function render(): Promise<void> {
             name: filename.value,
             format: format.value,
             ppi: format.value === 'png' ? ppi.value : undefined,
+            principalId: principalsStore.selectedPrincipalId ?? null,
         })
         result.value = preview
         const blob = base64ToBlob(preview.bytes, preview.mime)
