@@ -1,6 +1,6 @@
 # Spora Plugin: Typst Frontend
 
-Vue 3 admin SPA for [`spora-plugin-typst`](../spora-plugin-typst). Built and shipped as Composer type `spora-plugin-frontend`; the host SPA (`spora-frontend`) lazy-loads it via `/plugins/spora-plugin-typst-frontend/main.js`.
+Vue 3 admin SPA for [`spora-plugin-typst`](../spora-plugin-typst). Built and shipped as Composer type `spora-plugin-frontend`; the host SPA (`spora-frontend`) lazy-loads it via `/plugins/typst/main.js` — the parent plugin's `plugin.json#slug`, not this package's name.
 
 ## What's in the box
 
