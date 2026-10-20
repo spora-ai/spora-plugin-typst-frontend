@@ -218,7 +218,11 @@ function listSourceFiles(dir) {
  * has to be the same on every machine: the CI gate compares the
  * generated file with the committed one byte for byte.
  */
-const compareStrings = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+function compareStrings(a, b) {
+    if (a < b) return -1
+    if (a > b) return 1
+    return 0
+}
 
 const rel = (file) => relative(ROOT, file).split(sep).join('/')
 
@@ -264,7 +268,33 @@ function stringArgument(args) {
     if (first?.type === 'TemplateLiteral' && first.expressions.length === 0) {
         return first.quasis[0].value.cooked ?? first.quasis[0].value.raw
     }
+    if (isRawTemplate(first)) return first.quasi.quasis[0].value.raw
     return null
+}
+
+/**
+ * A `String.raw` tagged template with no interpolation.
+ *
+ * The tag changes how the source text is *read*, not whether it is a literal,
+ * so the extractor has to see through it — otherwise `t(String.raw`…`)` reads
+ * as a dynamic key and the catalogue loses the entry.
+ *
+ * The key is the *raw* text: `String.raw` hands the raw source to the message
+ * compiler, so `String.raw`144 PPI \@2x`` is the key `144 PPI \@2x`, with the
+ * backslash — the same key the escaped string literal it replaced produced.
+ */
+function isRawTemplate(node) {
+    if (node?.type !== 'TaggedTemplateExpression') return false
+    if (node.quasi.expressions.length > 0) return false
+    const { tag } = node
+    return (
+        tag.type === 'MemberExpression' &&
+        tag.computed === false &&
+        tag.object.type === 'Identifier' &&
+        tag.object.name === 'String' &&
+        tag.property.type === 'Identifier' &&
+        tag.property.name === 'raw'
+    )
 }
 
 function propertyName(node) {

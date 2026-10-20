@@ -141,8 +141,11 @@ const PREVIEW_ENDPOINT = 'POST /api/v1/typst/preview'
  */
 const PPI_OPTIONS = [
     { value: 72, label: t('72 PPI — web / thumbnail') },
-    { value: 144, label: t('144 PPI — Retina \\@2x (default)') },
-    { value: 288, label: t('288 PPI — Retina \\@4x') },
+    // `String.raw` keeps the `\@` that vue-i18n's message compiler reads as
+    // an escaped `@` — the label has to render "Retina \@2x", not "Retina @2x",
+    // and in a plain string literal that backslash has to be escaped itself.
+    { value: 144, label: t(String.raw`144 PPI — Retina \@2x (default)`) },
+    { value: 288, label: t(String.raw`288 PPI — Retina \@4x`) },
     { value: 600, label: t('600 PPI — print pre-press') },
 ]
 
