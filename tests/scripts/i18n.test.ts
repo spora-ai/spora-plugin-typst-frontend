@@ -11,6 +11,10 @@
  * `CompileForm.vue` because the retina labels carry a `\@` that
  * vue-i18n's message compiler reads as an escaped `@` — and in a plain
  * string literal that backslash has to be escaped itself.
+ *
+ * The second rule is the other half: a label that is a product
+ * designation and a number is not copy, so it is not reported and it
+ * needs no catalogue entry.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -38,9 +42,9 @@ function catalogue(entries: Record<string, string>): string {
  * The exit code is the assertion: the extractor exits 0 only when every
  * rule holds.
  */
-function checkFixture(): number {
+function checkFixture(root: string = fixtureRoot): number {
     try {
-        execFileSync(process.execPath, [EXTRACTOR, '--check', '--root', fixtureRoot], {
+        execFileSync(process.execPath, [EXTRACTOR, '--check', '--root', root], {
             cwd: REPO_ROOT,
             stdio: 'pipe',
         })
@@ -87,6 +91,27 @@ afterAll(() => {
     rmSync(fixtureRoot, { recursive: true, force: true })
 })
 
+/**
+ * A fixture whose only unwrapped string is `label`.
+ *
+ * A label that is a product designation and a number reads the same in
+ * every language, so the extractor treats it as copy that needs no
+ * catalogue entry. The catalogue stays empty — the label is not a key.
+ */
+function writeLabelFixture(root: string, label: string): void {
+    mkdirSync(join(root, 'src/locales'), { recursive: true })
+    writeFileSync(
+        join(root, 'src/Panel.ts'),
+        [
+            `const OPTION = { value: 288, label: '${label}' }`,
+            'export { OPTION }',
+            '',
+        ].join('\n'),
+    )
+    writeFileSync(join(root, 'src/locales/en.json'), catalogue({}))
+    writeFileSync(join(root, 'src/locales/de.json'), catalogue({}))
+}
+
 describe('the i18n extractor', () => {
     it('harvests a String.raw tagged template as a catalogue key', () => {
         expect(checkFixture()).toBe(0)
@@ -105,5 +130,28 @@ describe('the i18n extractor', () => {
             }),
         )
         expect(checkFixture()).not.toBe(0)
+    })
+})
+
+describe('the excluded terms', () => {
+    let labelRoot: string
+
+    beforeAll(() => {
+        labelRoot = mkdtempSync(join(tmpdir(), 'i18n-label-'))
+    })
+
+    afterAll(() => {
+        rmSync(labelRoot, { recursive: true, force: true })
+    })
+
+    it('does not report a label that is a product designation', () => {
+        writeLabelFixture(labelRoot, '288 PPI — Retina @4x')
+        expect(checkFixture(labelRoot)).toBe(0)
+    })
+
+    it('reports a label that merely contains the excluded term', () => {
+        // The match is exact, so the word added here makes it copy again.
+        writeLabelFixture(labelRoot, '288 PPI — Retina @4x print')
+        expect(checkFixture(labelRoot)).not.toBe(0)
     })
 })

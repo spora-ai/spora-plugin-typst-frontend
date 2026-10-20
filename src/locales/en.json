@@ -1,6 +1,5 @@
 {
   "144 PPI — Retina \\@2x (default)": "144 PPI — Retina \\@2x (default)",
-  "288 PPI — Retina \\@4x": "288 PPI — Retina \\@4x",
   "600 PPI — print pre-press": "600 PPI — print pre-press",
   "72 PPI — web / thumbnail": "72 PPI — web / thumbnail",
   "Actions": "Actions",
@@ -129,7 +128,7 @@
   "Render failed.": "Render failed.",
   "Render preview": "Render preview",
   "Rendered": "Rendered",
-  "Rendered by": "Rendered by",
+  "Rendered by {endpoint} — no DB writes": "Rendered by {endpoint} — no DB writes",
   "Rendering…": "Rendering…",
   "Resource overlay": "Resource overlay",
   "Resource source (read-only)": "Resource source (read-only)",
@@ -183,7 +182,6 @@
   "failed to render example": "failed to render example",
   "link text": "link text",
   "move": "move",
-  "no DB writes": "no DB writes",
   "open": "open",
   "or drop one here": "or drop one here",
   "search": "search",

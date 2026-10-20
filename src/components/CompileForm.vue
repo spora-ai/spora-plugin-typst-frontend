@@ -142,10 +142,17 @@ const PREVIEW_ENDPOINT = 'POST /api/v1/typst/preview'
 const PPI_OPTIONS = [
     { value: 72, label: t('72 PPI — web / thumbnail') },
     // `String.raw` keeps the `\@` that vue-i18n's message compiler reads as
-    // an escaped `@` — the label has to render "Retina \@2x", not "Retina @2x",
-    // and in a plain string literal that backslash has to be escaped itself.
+    // an escaped `@` — without it a bare `@` starts a linked message and the
+    // compiler throws "Invalid linked format" at render. In a plain string
+    // literal that backslash would have to be escaped itself.
     { value: 144, label: t(String.raw`144 PPI — Retina \@2x (default)`) },
-    { value: 288, label: t(String.raw`288 PPI — Retina \@4x`) },
+    // A product designation and a number — the one option with no word to
+    // translate. A catalogue entry could only carry a German value identical
+    // to its key (which rule 3 rejects as an untranslated placeholder) or an
+    // invented German qualifier (which the contract forbids), so it stays a
+    // raw label. Outside `t()` the `@` needs no escape: no message compiler
+    // runs over it, and Apple's own German pages write "Retina @4x" too.
+    { value: 288, label: '288 PPI — Retina @4x' },
     { value: 600, label: t('600 PPI — print pre-press') },
 ]
 
@@ -740,7 +747,7 @@ onMounted(() => {
                     </span>
                 </div>
                 <span class="text-xs text-muted-foreground">
-                    {{ t('Rendered by') }} <code class="font-mono">{{ PREVIEW_ENDPOINT }}</code> — {{ t('no DB writes') }}
+                    {{ t('Rendered by {endpoint} — no DB writes', { endpoint: PREVIEW_ENDPOINT }) }}
                 </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">

@@ -23,6 +23,15 @@
  */
 export type ToolKind = 'wrap' | 'link-dialog'
 
+/**
+ * The catalogue keys of the formatting tools.
+ *
+ * The toolbar resolves each key with `t()`, so this union is what its
+ * label map is typed over: a tool whose label is missing from the map
+ * is a compile error rather than an `undefined` that reaches the DOM.
+ */
+export type ToolbarToolKey = 'Bold' | 'Italic' | 'Underline' | 'Link'
+
 export interface ToolbarTool {
     /**
      * Catalogue key — the English source string of the button label.
@@ -31,7 +40,7 @@ export interface ToolbarTool {
      * the panel's language while this stays a stable identifier (the
      * `data-testid` is derived from it).
      */
-    key: string
+    key: ToolbarToolKey
     kind: ToolKind
     /**
      * Snippet that lands in the buffer when the operator clicks

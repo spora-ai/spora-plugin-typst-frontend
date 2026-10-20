@@ -38,6 +38,7 @@ import {
     applyTool,
     caretOffsetForPlaceholder,
     type ToolbarTool,
+    type ToolbarToolKey,
 } from '../composables/useEditorToolbar'
 import HeadingMenu from './HeadingMenu.vue'
 import LinkInsertDialog from './LinkInsertDialog.vue'
@@ -51,8 +52,12 @@ const { t } = useI18n()
  * English source string); the visible label is resolved here so the
  * button follows the panel's language while the key stays a stable
  * identifier.
+ *
+ * Typed over `ToolbarToolKey` rather than `string`: a tool whose label
+ * is missing from this map is a compile error, not an `undefined` that
+ * reaches the DOM as an unlabelled button.
  */
-const TOOL_LABELS: Record<string, string> = {
+const TOOL_LABELS: Record<ToolbarToolKey, string> = {
     Bold: t('Bold'),
     Italic: t('Italic'),
     Underline: t('Underline'),
