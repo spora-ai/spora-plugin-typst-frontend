@@ -110,22 +110,23 @@ jobs:
 
       - name: Verify bundle size
         # Sanity check — main.js + style.css combined should fit under
-        # 280 KB pre-gzip. IIFE plugins sharing the host's Vue + Pinia
+        # 240 KB pre-gzip. IIFE plugins sharing the host's Vue + Pinia
         # + vue-router should land well under that; this catches the
         # "accidentally bundled a 1 MB CodeMirror" regression.
         #
         # The budget grew from 200 KB when the plugin started shipping
         # its own vue-i18n instance: the runtime plus the two
-        # catalogues (en.json is a generated identity map) add ~95 KB
-        # to the bundle. The host does not publish a vue-i18n global
-        # for plugins to share, so the runtime has to be bundled.
+        # catalogues (en.json is a generated identity map) add ~74 KB
+        # to the bundle (measured: 156 KB before, 230 KB after). The
+        # host does not publish a vue-i18n global for plugins to share,
+        # so the runtime has to be bundled.
         run: |
           MAIN=$(stat -c%s frontend/main.js)
           CSS=$(stat -c%s frontend/style.css)
           TOTAL=$((MAIN + CSS))
           echo "main.js=${MAIN}B style.css=${CSS}B total=${TOTAL}B"
-          if [ $TOTAL -gt 286720 ]; then
-            echo "::error::Bundle exceeded 280 KB budget (got ${TOTAL}B)"
+          if [ $TOTAL -gt 245760 ]; then
+            echo "::error::Bundle exceeded 240 KB budget (got ${TOTAL}B)"
             exit 1
           fi
 
