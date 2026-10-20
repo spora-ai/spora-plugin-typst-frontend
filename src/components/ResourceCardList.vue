@@ -73,9 +73,12 @@ export interface SavedEventPayload {
  * bytes.
  */
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useResourceStore } from '../stores/resources'
 import { useResourceCardList } from '../composables/useResourceCardList'
 import ResourceOverlay from './ResourceOverlay.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
     kind: ResourceKind
@@ -124,6 +127,17 @@ async function openOverlay(name: string): Promise<void> {
     // rather than a loading flash. `ensureSource` short-circuits
     // when the cache is warm.
     await ensureSource(name)
+}
+
+/**
+ * The card's accessible name — "Open template invoice.typ" /
+ * "Open example headings.typ". The kind is part of the sentence, so
+ * each kind gets its own message rather than a concatenated label.
+ */
+function openLabel(name: string): string {
+    return props.kind === 'template'
+        ? t('Open template {name}', { name })
+        : t('Open example {name}', { name })
 }
 
 function closeOverlay(): void {
@@ -186,7 +200,7 @@ function onSaved(payload: { name: string; content: string }): void {
         <div
             v-if="store.loading && !hasItems"
             class="text-center text-muted-foreground py-6"
-        >Loading…</div>
+        >{{ t('Loading…') }}</div>
         <div
             v-else-if="!hasItems"
             class="text-center text-muted-foreground py-6"
@@ -201,14 +215,14 @@ function onSaved(payload: { name: string; content: string }): void {
                     :key="item.name"
                     type="button"
                     class="block w-full text-left rounded-lg border border-border bg-card p-4 cursor-pointer hover:border-primary transition-colors space-y-1"
-                    :aria-label="`Open ${kind} ${item.name}`"
+                    :aria-label="openLabel(item.name)"
                     :data-testid="`resource-card-${item.name}`"
                     @click="openOverlay(item.name)"
                 >
                     <div class="font-mono text-sm text-foreground truncate">{{ item.name }}</div>
                     <div class="text-xs text-muted-foreground">
                         {{ formatBytes(item.size) }}
-                        · <span class="text-muted-foreground/70">Your upload</span>
+                        · <span class="text-muted-foreground/70">{{ t('Your upload') }}</span>
                     </div>
                 </button>
             </div>
@@ -229,7 +243,7 @@ function onSaved(payload: { name: string; content: string }): void {
                         :key="item.name"
                         type="button"
                         class="block w-full text-left rounded-lg border border-border bg-muted/40 p-4 cursor-pointer hover:border-primary transition-colors space-y-1"
-                        :aria-label="`Open ${kind} ${item.name}`"
+                        :aria-label="openLabel(item.name)"
                         :data-testid="`resource-card-${item.name}`"
                         @click="openOverlay(item.name)"
                     >
@@ -241,7 +255,7 @@ function onSaved(payload: { name: string; content: string }): void {
                                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                                 </svg>
-                                Built-in
+                                {{ t('Built-in') }}
                             </span>
                         </div>
                     </button>

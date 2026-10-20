@@ -25,7 +25,10 @@
  * blocked). The button briefly flips to "Copied!" on success.
  */
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useResourceStore } from '../stores/resources'
+
+const { t } = useI18n()
 
 const store = useResourceStore()
 
@@ -105,7 +108,7 @@ const hasBothSections = computed(
 )
 
 async function confirmAndDelete(name: string): Promise<void> {
-    if (!confirm(`Delete font "${name}"? This cannot be undone.`)) return
+    if (!confirm(t('Delete font "{name}"? This cannot be undone.', { name }))) return
     try {
         await store.removeFont(name)
     } catch {
@@ -123,20 +126,20 @@ onMounted(() => {
         <table class="min-w-full divide-y divide-border text-sm">
             <thead class="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                    <th scope="col" class="px-4 py-2">Name</th>
-                    <th scope="col" class="px-4 py-2">Origin</th>
-                    <th scope="col" class="px-4 py-2">Use in Typst</th>
-                    <th scope="col" class="px-4 py-2 text-right">Size</th>
-                    <th scope="col" class="px-4 py-2 text-right">Actions</th>
+                    <th scope="col" class="px-4 py-2">{{ t('Name') }}</th>
+                    <th scope="col" class="px-4 py-2">{{ t('Origin') }}</th>
+                    <th scope="col" class="px-4 py-2">{{ t('Use in Typst') }}</th>
+                    <th scope="col" class="px-4 py-2 text-right">{{ t('Size') }}</th>
+                    <th scope="col" class="px-4 py-2 text-right">{{ t('Actions') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-border">
                 <tr v-if="store.loading && !hasFonts">
-                    <td colspan="5" class="px-4 py-6 text-center text-muted-foreground bg-card">Loading…</td>
+                    <td colspan="5" class="px-4 py-6 text-center text-muted-foreground bg-card">{{ t('Loading…') }}</td>
                 </tr>
                 <tr v-else-if="!hasFonts">
                     <td colspan="5" class="px-4 py-6 text-center text-muted-foreground bg-card">
-                        No fonts uploaded yet. Drop a .ttf / .otf / .woff / .woff2 file above.
+                        {{ t('No fonts uploaded yet. Drop a .ttf / .otf / .woff / .woff2 file above.') }}
                     </td>
                 </tr>
                 <template v-else>
@@ -147,6 +150,12 @@ onMounted(() => {
                     >
                         <td class="px-4 py-2 font-mono text-foreground">{{ font.name }}</td>
                         <td class="px-4 py-2">
+                            <!--
+                              "Principal" is a Spora product term — the same
+                              word in every language, so it is not a
+                              catalogue entry. The skill-shipped badge
+                              below is translated.
+                            -->
                             <span
                                 class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground"
                             >Principal</span>
@@ -164,9 +173,9 @@ onMounted(() => {
                                                 ? 'bg-destructive/10 text-destructive'
                                                 : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                                     ]"
-                                    :aria-label="`Copy Typst snippet for ${font.name}`"
+                                    :aria-label="t('Copy Typst snippet for {name}', { name: font.name })"
                                     @click="copySnippet(font.name, fontReference(font.name))"
-                                >{{ copiedName === font.name ? 'Copied' : 'Copy' }}</button>
+                                >{{ copiedName === font.name ? t('Copied') : t('Copy') }}</button>
                             </div>
                         </td>
                         <td class="px-4 py-2 text-right tabular-nums text-foreground">{{ formatBytes(font.size) }}</td>
@@ -176,7 +185,7 @@ onMounted(() => {
                                 class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
                                 :disabled="store.uploading"
                                 @click="confirmAndDelete(font.name)"
-                            >Delete</button>
+                            >{{ t('Delete') }}</button>
                         </td>
                     </tr>
                     <tr v-if="hasBothSections">
@@ -187,7 +196,7 @@ onMounted(() => {
                                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                                         <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                                     </svg>
-                                    Built-in
+                                    {{ t('Built-in') }}
                                 </span>
                                 <span class="flex-1 border-t border-border" />
                             </div>
@@ -202,7 +211,7 @@ onMounted(() => {
                         <td class="px-4 py-2">
                             <span
                                 class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-accent text-accent-foreground"
-                            >Skill-shipped</span>
+                            >{{ t('Skill-shipped') }}</span>
                         </td>
                         <td class="px-4 py-2">
                             <div class="flex items-center gap-2">
@@ -217,13 +226,13 @@ onMounted(() => {
                                                 ? 'bg-destructive/10 text-destructive'
                                                 : 'text-muted-foreground hover:bg-background hover:text-foreground',
                                     ]"
-                                    :aria-label="`Copy Typst snippet for ${font.name}`"
+                                    :aria-label="t('Copy Typst snippet for {name}', { name: font.name })"
                                     @click="copySnippet(font.name, fontReference(font.name))"
-                                >{{ copiedName === font.name ? 'Copied' : 'Copy' }}</button>
+                                >{{ copiedName === font.name ? t('Copied') : t('Copy') }}</button>
                             </div>
                         </td>
                         <td class="px-4 py-2 text-right tabular-nums text-foreground">{{ formatBytes(font.size) }}</td>
-                        <td class="px-4 py-2 text-right text-xs text-muted-foreground">Built-in</td>
+                        <td class="px-4 py-2 text-right text-xs text-muted-foreground">{{ t('Built-in') }}</td>
                     </tr>
                 </template>
             </tbody>

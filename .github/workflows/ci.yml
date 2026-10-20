@@ -38,6 +38,13 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      - name: i18n catalogue
+        # The catalogue's keys ARE the English source strings, so a copy
+        # edit orphans the German entry — the extractor catches that.
+        # It also fails on an operator-facing string that is not wrapped
+        # in `t()`, and on a `de.json` that drifts from `en.json`.
+        run: npm run i18n:check
+
       - name: Test
         run: npm test
 
@@ -103,16 +110,22 @@ jobs:
 
       - name: Verify bundle size
         # Sanity check — main.js + style.css combined should fit under
-        # 200 KB pre-gzip. IIFE plugins sharing the host's Vue + Pinia
+        # 280 KB pre-gzip. IIFE plugins sharing the host's Vue + Pinia
         # + vue-router should land well under that; this catches the
         # "accidentally bundled a 1 MB CodeMirror" regression.
+        #
+        # The budget grew from 200 KB when the plugin started shipping
+        # its own vue-i18n instance: the runtime plus the two
+        # catalogues (en.json is a generated identity map) add ~95 KB
+        # to the bundle. The host does not publish a vue-i18n global
+        # for plugins to share, so the runtime has to be bundled.
         run: |
           MAIN=$(stat -c%s frontend/main.js)
           CSS=$(stat -c%s frontend/style.css)
           TOTAL=$((MAIN + CSS))
           echo "main.js=${MAIN}B style.css=${CSS}B total=${TOTAL}B"
-          if [ $TOTAL -gt 204800 ]; then
-            echo "::error::Bundle exceeded 200 KB budget (got ${TOTAL}B)"
+          if [ $TOTAL -gt 286720 ]; then
+            echo "::error::Bundle exceeded 280 KB budget (got ${TOTAL}B)"
             exit 1
           fi
 

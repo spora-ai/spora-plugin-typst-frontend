@@ -8,7 +8,10 @@
  * the UI separation is purely navigational.
  */
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useResourceStore } from '../stores/resources'
+
+const { t } = useI18n()
 
 const store = useResourceStore()
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -24,7 +27,7 @@ function readFileAsText(file: File): Promise<string> {
 
 async function handleFile(file: File): Promise<void> {
     if (!file.name.endsWith('.typ')) {
-        store.error = 'Only .typ example files are supported.'
+        store.error = t('Only .typ example files are supported.')
         return
     }
     try {
@@ -32,7 +35,7 @@ async function handleFile(file: File): Promise<void> {
         const result = await store.uploadExample(file.name, content)
         if (result === null) return
     } catch (e) {
-        store.error = e instanceof Error ? e.message : 'Upload failed.'
+        store.error = e instanceof Error ? e.message : t('Upload failed.')
     }
 }
 
@@ -65,9 +68,9 @@ async function onDrop(event: DragEvent): Promise<void> {
     >
         <div class="flex items-center justify-between gap-4 flex-wrap">
             <div class="min-w-0">
-                <p class="text-sm font-medium text-foreground">Upload example</p>
+                <p class="text-sm font-medium text-foreground">{{ t('Upload example') }}</p>
                 <p class="text-xs text-muted-foreground mt-0.5">
-                    Stored as UTF-8 source (≤ 5 MiB)
+                    {{ t('Stored as UTF-8 source (≤ 5 MiB)') }}
                 </p>
             </div>
             <div class="flex items-center gap-2">
@@ -82,9 +85,9 @@ async function onDrop(event: DragEvent): Promise<void> {
                         <polyline points="17 8 12 3 7 8" />
                         <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
-                    Choose file
+                    {{ t('Choose file') }}
                 </button>
-                <label for="typst-example-upload" class="text-xs text-muted-foreground cursor-pointer">or drop one here</label>
+                <label for="typst-example-upload" class="text-xs text-muted-foreground cursor-pointer">{{ t('or drop one here') }}</label>
             </div>
         </div>
         <input
@@ -92,7 +95,7 @@ async function onDrop(event: DragEvent): Promise<void> {
             ref="fileInput"
             type="file"
             accept=".typ"
-            aria-label="Upload Typst example file"
+            :aria-label="t('Upload Typst example file')"
             class="hidden"
             @change="onFileChange"
         />

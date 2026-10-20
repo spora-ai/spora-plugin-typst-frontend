@@ -10,6 +10,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { ApiError } from '../api/client'
+import { t } from '../i18n'
 import * as principalsApi from '../api/principals'
 import type { Principal } from '../api/principals'
 
@@ -33,7 +34,7 @@ export const usePrincipalsStore = defineStore('typst-principals', () => {
                 selectedPrincipalId.value = ownPrincipal?.id ?? principals.value[0]?.id ?? null
             }
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to load principals.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to load principals.')
         } finally {
             loading.value = false
         }

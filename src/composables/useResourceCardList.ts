@@ -2,6 +2,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ApiError } from '../api/client'
 import { getExample } from '../api/examples'
 import { getTemplate } from '../api/templates'
+import { t } from '../i18n'
 import { useResourceStore } from '../stores/resources'
 
 export type ResourceKind = 'template' | 'example'
@@ -134,7 +135,7 @@ export function useResourceCardList(kind: ResourceKind) {
             // dragging the network client in.
             const result = await store.renderExample(name, content, 'png', 144)
             if (result === null) {
-                renderError.value = store.error ?? 'failed to render example'
+                renderError.value = store.error ?? t('failed to render example')
                 return
             }
             const blob = base64ToBlob(result.bytes, result.mime)
@@ -155,7 +156,7 @@ export function useResourceCardList(kind: ResourceKind) {
             }
             if (prev !== undefined) URL.revokeObjectURL(prev.blobUrl)
         } catch (e) {
-            renderError.value = e instanceof ApiError ? e.message : 'failed to render example'
+            renderError.value = e instanceof ApiError ? e.message : t('failed to render example')
         } finally {
             renderingName.value = null
         }
@@ -175,14 +176,21 @@ export function useResourceCardList(kind: ResourceKind) {
             const source = await fetchSource(name, store.principalId ?? undefined)
             sourceByName.value = { ...sourceByName.value, [name]: source }
         } catch (e) {
-            loadError.value = e instanceof ApiError ? e.message : `failed to read ${kind}`
+            loadError.value = e instanceof ApiError
+                ? e.message
+                : (kind === 'template'
+                    ? t('failed to read template')
+                    : t('failed to read example'))
         } finally {
             loadingName.value = null
         }
     }
 
     async function confirmAndDelete(name: string): Promise<void> {
-        if (!confirm(`Delete ${kind} "${name}"? This cannot be undone.`)) return
+        const question = kind === 'template'
+            ? t('Delete template "{name}"? This cannot be undone.', { name })
+            : t('Delete example "{name}"? This cannot be undone.', { name })
+        if (!confirm(question)) return
         try {
             await remove(name)
             const nextSource = { ...sourceByName.value }

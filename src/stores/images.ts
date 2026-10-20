@@ -11,6 +11,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
+import { t } from '../i18n'
 import * as imagesApi from '../api/images'
 import type { ImageResource, UploadedImage } from '../types'
 
@@ -32,7 +33,7 @@ export const useImagesStore = defineStore('typst-images', () => {
             images.value = await imagesApi.listImages(principalId.value ?? undefined)
             hasLoadedOnce = true
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to load images.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to load images.')
         } finally {
             loading.value = false
         }
@@ -56,7 +57,7 @@ export const useImagesStore = defineStore('typst-images', () => {
             await loadImages()
             return image
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to upload image.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to upload image.')
             return null
         } finally {
             uploading.value = false
@@ -81,7 +82,7 @@ export const useImagesStore = defineStore('typst-images', () => {
             await imagesApi.deleteImage(name, principalId.value ?? undefined)
             images.value = images.value.filter((i) => i.name !== name)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to delete image.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to delete image.')
             throw e
         } finally {
             uploading.value = false
