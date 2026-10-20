@@ -13,7 +13,7 @@
  * English and the extractor's rule 4 would not see it.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { setApi } from '../../src/api/client'
+import { setApi, ApiError } from '../../src/api/client'
 import { createPluginI18n } from '../../src/i18n'
 import { useImagesStore } from '../../src/stores/images'
 import { usePrincipalsStore } from '../../src/stores/principals'
@@ -30,11 +30,14 @@ import { createPinia, setActivePinia } from 'pinia'
  */
 const TRANSPORT_FAILURE = 'transport failed'
 
+/** The failure the host's typed client carries. */
+const WIRE_FAILURE = 'the server said no'
+
 /**
- * An API whose every call fails with a plain `Error`.
+ * An API whose every call fails with the given reason.
  */
-function failingApi(): PluginHostContext['api'] {
-    const fail = (): Promise<never> => Promise.reject(new Error(TRANSPORT_FAILURE))
+function failingApi(reason: unknown): PluginHostContext['api'] {
+    const fail = (): Promise<never> => Promise.reject(reason)
     return {
         get: fail,
         post: fail,
@@ -42,6 +45,28 @@ function failingApi(): PluginHostContext['api'] {
         patch: fail,
         delete: fail,
     }
+}
+
+/**
+ * Run a store operation against both kinds of failure.
+ *
+ * The catch block branches on `e instanceof ApiError`: the host's
+ * typed failure keeps its own message, anything else falls back to
+ * the catalogue's sentence. Both branches are reachable in
+ * production and both have to run for the branch to be covered.
+ */
+async function expectBothMessages(
+    store: { error: string | null },
+    operation: () => Promise<unknown>,
+    catalogueMessage: string,
+): Promise<void> {
+    setApi(failingApi(new ApiError(WIRE_FAILURE, 'WIRE', 502)))
+    await operation().catch(() => undefined)
+    expect(store.error).toBe(WIRE_FAILURE)
+
+    setApi(failingApi(new Error(TRANSPORT_FAILURE)))
+    await operation().catch(() => undefined)
+    expect(store.error).toBe(catalogueMessage)
 }
 
 beforeEach(() => {
@@ -54,60 +79,96 @@ beforeEach(() => {
 })
 
 describe('stores/resources — translated failures', () => {
-    it('translates the message of a failed template listing', async () => {
-        setApi(failingApi())
+    it('reports a failed listing', async () => {
         const store = useResourceStore()
 
-        await store.loadTemplates()
-
-        expect(store.error).toBe('Failed to load templates.')
+        await expectBothMessages(store, () => store.loadFonts(), 'Failed to load fonts.')
+        await expectBothMessages(store, () => store.loadTemplates(), 'Failed to load templates.')
+        await expectBothMessages(store, () => store.loadExamples(), 'Failed to load examples.')
     })
 
-    it('translates the message of a failed upload', async () => {
-        setApi(failingApi())
+    it('reports a failed upload', async () => {
         const store = useResourceStore()
 
-        expect(await store.uploadFont('Inter.otf', 'base64')).toBeNull()
-        expect(store.error).toBe('Failed to upload font.')
-
-        expect(await store.uploadTemplate('invoice.typ', 'content')).toBeNull()
-        expect(store.error).toBe('Failed to upload template.')
+        await expectBothMessages(store, () => store.uploadFont('Inter.otf', 'base64'), 'Failed to upload font.')
+        await expectBothMessages(
+            store,
+            () => store.uploadTemplate('invoice.typ', 'content'),
+            'Failed to upload template.',
+        )
+        await expectBothMessages(
+            store,
+            () => store.uploadExample('headings.typ', 'content'),
+            'Failed to upload example.',
+        )
     })
 
-    it('translates the message of a failed delete', async () => {
-        setApi(failingApi())
+    it('reports a failed update', async () => {
         const store = useResourceStore()
 
-        await expect(store.removeFont('Inter.otf')).rejects.toThrow(TRANSPORT_FAILURE)
-        expect(store.error).toBe('Failed to delete font.')
+        await expectBothMessages(
+            store,
+            () => store.updateTemplate('invoice.typ', 'content'),
+            'Failed to update template.',
+        )
+        await expectBothMessages(
+            store,
+            () => store.updateExample('headings.typ', 'content'),
+            'Failed to update example.',
+        )
+    })
 
-        await expect(store.removeTemplate('invoice.typ')).rejects.toThrow(TRANSPORT_FAILURE)
-        expect(store.error).toBe('Failed to delete template.')
+    it('reports a failed preview', async () => {
+        const store = useResourceStore()
 
-        await expect(store.removeExample('headings.typ')).rejects.toThrow(TRANSPORT_FAILURE)
-        expect(store.error).toBe('Failed to delete example.')
+        await expectBothMessages(
+            store,
+            () => store.renderExample('headings.typ', '= hi'),
+            'Failed to render example preview.',
+        )
+    })
+
+    it('reports a failed delete', async () => {
+        const store = useResourceStore()
+
+        await expectBothMessages(store, () => store.removeFont('Inter.otf'), 'Failed to delete font.')
+        await expectBothMessages(store, () => store.removeTemplate('invoice.typ'), 'Failed to delete template.')
+        await expectBothMessages(store, () => store.removeExample('headings.typ'), 'Failed to delete example.')
     })
 })
 
 describe('stores/sources — translated failures', () => {
-    it('translates the message of a failed open', async () => {
-        setApi(failingApi())
+    it('reports a failed listing', async () => {
         const store = useSourcesStore()
 
-        expect(await store.openSource('src-1')).toBeNull()
-
-        expect(store.error).toBe('Failed to open playground source.')
+        await expectBothMessages(store, () => store.loadSources(), 'Failed to load playground sources.')
     })
 
-    it('translates the message of a failed save', async () => {
-        setApi(failingApi())
+    it('reports a failed open', async () => {
         const store = useSourcesStore()
 
-        expect(await store.createSource('letter.typ', 'content')).toBeNull()
-        expect(store.error).toBe('Failed to save playground source.')
+        await expectBothMessages(store, () => store.openSource('src-1'), 'Failed to open playground source.')
+    })
 
-        expect(await store.saveSource('src-1', 'content')).toBeNull()
-        expect(store.error).toBe('Failed to save playground source.')
+    it('reports a failed save', async () => {
+        const store = useSourcesStore()
+
+        await expectBothMessages(
+            store,
+            () => store.createSource('letter.typ', 'content'),
+            'Failed to save playground source.',
+        )
+        await expectBothMessages(
+            store,
+            () => store.saveSource('src-1', 'content'),
+            'Failed to save playground source.',
+        )
+    })
+
+    it('reports a failed delete', async () => {
+        const store = useSourcesStore()
+
+        await expectBothMessages(store, () => store.removeSource('src-1'), 'Failed to delete playground source.')
     })
 
     it('reads the message from the catalogue, so it follows the panel\'s language', async () => {
@@ -116,51 +177,43 @@ describe('stores/sources — translated failures', () => {
         // German catalogue installed the operator reads German —
         // a literal would still read English.
         createPluginI18n('de')
-        setApi(failingApi())
+        setApi(failingApi(new Error(TRANSPORT_FAILURE)))
         const store = useSourcesStore()
 
         await store.saveSource('src-1', 'content')
 
         expect(store.error).toBe('Editor-Datei konnte nicht gespeichert werden.')
     })
-
-    it('translates the message of a failed delete', async () => {
-        setApi(failingApi())
-        const store = useSourcesStore()
-
-        await expect(store.removeSource('src-1')).rejects.toThrow(TRANSPORT_FAILURE)
-
-        expect(store.error).toBe('Failed to delete playground source.')
-    })
 })
 
 describe('stores/images — translated failures', () => {
-    it('translates the message of a failed upload', async () => {
-        setApi(failingApi())
+    it('reports a failed listing', async () => {
         const store = useImagesStore()
 
-        expect(await store.uploadImage('logo.png', 'image/png', 'base64')).toBeNull()
-
-        expect(store.error).toBe('Failed to upload image.')
+        await expectBothMessages(store, () => store.loadImages(), 'Failed to load images.')
     })
 
-    it('translates the message of a failed delete', async () => {
-        setApi(failingApi())
+    it('reports a failed upload', async () => {
         const store = useImagesStore()
 
-        await expect(store.removeImage('logo.png')).rejects.toThrow(TRANSPORT_FAILURE)
+        await expectBothMessages(
+            store,
+            () => store.uploadImage('logo.png', 'image/png', 'base64'),
+            'Failed to upload image.',
+        )
+    })
 
-        expect(store.error).toBe('Failed to delete image.')
+    it('reports a failed delete', async () => {
+        const store = useImagesStore()
+
+        await expectBothMessages(store, () => store.removeImage('logo.png'), 'Failed to delete image.')
     })
 })
 
 describe('stores/principals — translated failures', () => {
-    it('translates the message of a failed listing', async () => {
-        setApi(failingApi())
+    it('reports a failed listing', async () => {
         const store = usePrincipalsStore()
 
-        await store.loadPrincipals()
-
-        expect(store.error).toBe('Failed to load principals.')
+        await expectBothMessages(store, () => store.loadPrincipals(), 'Failed to load principals.')
     })
 })

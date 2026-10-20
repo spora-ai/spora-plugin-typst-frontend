@@ -190,6 +190,15 @@ describe('useResourceCardList — ensureSource', () => {
 
         expect(c.loadError.value).toBe('server-said-no')
     })
+
+    it('names the kind in the fallback message', async () => {
+        vi.mocked(getExample).mockRejectedValueOnce(new Error('boom'))
+
+        const c = useResourceCardList('example')
+        await c.ensureSource('a.typ')
+
+        expect(c.loadError.value).toBe('failed to read example')
+    })
 })
 
 describe('useResourceCardList — confirmAndDelete', () => {
