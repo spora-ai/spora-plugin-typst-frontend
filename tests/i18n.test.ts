@@ -6,7 +6,7 @@
  * and this is a test), and that the panel actually renders German
  * when the host says the operator's language is German.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
@@ -80,6 +80,16 @@ describe('the panel in German', () => {
             messages: { en, de },
         })
         expect(i18n.global.t('A key nobody translated')).toBe('A key nobody translated')
+    })
+
+    it('falls back to the English source when no instance has been created yet', async () => {
+        // A fresh module registry, so the instance this file created
+        // in `beforeEach` is not the one being asked. A store action
+        // that runs before `createPluginI18n` must not crash.
+        vi.resetModules()
+        const fresh = await import('../src/i18n')
+
+        expect(fresh.t('A key nobody translated')).toBe('A key nobody translated')
     })
 })
 
