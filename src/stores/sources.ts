@@ -183,7 +183,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
             }
             return saved
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to save playground source.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to save playground source.')
             return null
         } finally {
             saving.value = false

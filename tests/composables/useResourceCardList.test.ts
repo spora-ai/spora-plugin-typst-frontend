@@ -407,6 +407,17 @@ describe('useResourceCardList — example render', () => {
         expect(c.renderError.value).toBe('failed to render example')
     })
 
+    it('renderExample sets a fallback renderError when the store returns null', async () => {
+        // The store swallows the error and returns null, leaving the
+        // message to the composable.
+        patchStoreRender(async () => null)
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= broken')
+
+        expect(c.renderError.value).toBe('failed to render example')
+    })
+
     it('clearRender removes the cached entry', async () => {
         patchStoreRender(async (name) => ({
             bytes: PNG_1X1_BASE64,
