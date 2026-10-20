@@ -68,6 +68,7 @@
  *   doesn't lose work.
  */
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ApiError, withPrincipal } from '../api/client'
 import { previewTypst, type PreviewResult } from '../api/preview'
 import { listImages } from '../api/images'
@@ -77,13 +78,15 @@ import { usePrincipalsStore } from '../stores/principals'
 import { useResourceStore } from '../stores/resources'
 import { useSourcesStore, type SourcesKindFilter } from '../stores/sources'
 import { useTabsStore } from '../stores/tabs'
-import { DEFAULT_PPI, PPI_OPTIONS } from '../constants/ppi'
+import { DEFAULT_PPI } from '../constants/ppi'
 import type { ImageResource, MediaArchiveImage, PlaygroundSourceSummary, TemplateResource } from '../types'
 import OpenPickerModal from './OpenPickerModal.vue'
 import SourceEditor from './SourceEditor.vue'
 import TemplateInsertionPicker from './TemplateInsertionPicker.vue'
 import ImageInsertModal from './ImageInsertModal.vue'
 import EditorToolbar from './EditorToolbar.vue'
+
+const { t } = useI18n()
 
 defineProps<{
     hostContext: import('../shims').PluginHostContext
@@ -119,7 +122,38 @@ This is rendered by ext-typst #v(0.5em) via the plugin.
 // #import "templates/foo.typ": bar
 `
 
-const STARTER_NAME = 'editor.typ'
+/**
+ * The file name the editor suggests. A file name, not copy — it is
+ * the same in every language.
+ */
+const DEFAULT_FILENAME = 'editor.typ'
+
+/**
+ * The endpoint the preview panel documents. A URL path, not copy.
+ */
+const PREVIEW_ENDPOINT = 'POST /api/v1/typst/preview'
+
+/**
+ * The raster-density options the operator can pick.
+ *
+ * The wire-level numbers live in `constants/ppi.ts`; the labels are
+ * copy, so they are resolved here where the panel's language is known.
+ */
+const PPI_OPTIONS = [
+    { value: 72, label: t('72 PPI — web / thumbnail') },
+    { value: 144, label: t('144 PPI — Retina \\@2x (default)') },
+    { value: 288, label: t('288 PPI — Retina \\@4x') },
+    { value: 600, label: t('600 PPI — print pre-press') },
+]
+
+/**
+ * The diagnostic severities the panel renders. The severity itself
+ * comes from the compiler; the label is the panel's own copy.
+ */
+const SEVERITY_LABELS: Record<'error' | 'warning', string> = {
+    error: t('error'),
+    warning: t('warning'),
+}
 
 /**
  * sessionStorage key for the per-principal editor buffer.
@@ -237,13 +271,17 @@ async function loadPickerImages(): Promise<void> {
             pluginImages.value = plugin.value
         } else {
             pluginImages.value = []
-            error.value = `Could not load plugin images: ${plugin.reason instanceof Error ? plugin.reason.message : String(plugin.reason)}`
+            error.value = t('Could not load plugin images: {reason}', {
+                reason: plugin.reason instanceof Error ? plugin.reason.message : String(plugin.reason),
+            })
         }
         if (media.status === 'fulfilled') {
             mediaImages.value = media.value
         } else {
             mediaImages.value = []
-            error.value = `Could not load media archive: ${media.reason instanceof Error ? media.reason.message : String(media.reason)}`
+            error.value = t('Could not load media archive: {reason}', {
+                reason: media.reason instanceof Error ? media.reason.message : String(media.reason),
+            })
         }
     } finally {
         pickerLoading.value = false
@@ -347,7 +385,7 @@ function onPickerTabChange(tab: 'plugin' | 'media'): void {
 async function pickExistingSource(summary: PlaygroundSourceSummary): Promise<void> {
     const source_ = await sourcesStore.openSource(summary.id)
     if (source_ === null) {
-        error.value = sourcesStore.error ?? 'Failed to open source.'
+        error.value = sourcesStore.error ?? t('Failed to open source.')
         closeOpenPicker()
         return
     }
@@ -380,7 +418,7 @@ function startNewSource(): void {
 
 function loadStarter(): void {
     source.value = STARTER
-    filename.value = STARTER_NAME
+    filename.value = DEFAULT_FILENAME
     currentSourceId.value = null
     currentSourceIsDirty.value = false
     result.value = null
@@ -447,10 +485,10 @@ async function render(): Promise<void> {
     } catch (e) {
         if (e instanceof ApiError && e.code === 'COMPILATION_FAILED') {
             const parsed = parseDiagnostics(e.message)
-            error.value = 'Compilation failed — see diagnostics below.'
+            error.value = t('Compilation failed — see diagnostics below.')
             diagnostics.value = parsed
         } else {
-            error.value = e instanceof Error ? e.message : 'Render failed.'
+            error.value = e instanceof Error ? e.message : t('Render failed.')
         }
     } finally {
         busy.value = false
@@ -473,7 +511,7 @@ async function saveAndRender(): Promise<void> {
     if (currentSourceId.value === null) {
         const created = await sourcesStore.createSource(filename.value, source.value)
         if (created === null) {
-            error.value = sourcesStore.error ?? 'Failed to save.'
+            error.value = sourcesStore.error ?? t('Failed to save.')
             return
         }
         currentSourceId.value = created.id
@@ -481,7 +519,7 @@ async function saveAndRender(): Promise<void> {
     } else {
         const saved = await sourcesStore.saveSource(currentSourceId.value, source.value)
         if (saved === null) {
-            error.value = sourcesStore.error ?? 'Failed to save.'
+            error.value = sourcesStore.error ?? t('Failed to save.')
             return
         }
         currentSourceIsDirty.value = false
@@ -491,7 +529,9 @@ async function saveAndRender(): Promise<void> {
 
 async function deleteCurrent(): Promise<void> {
     if (currentSourceId.value === null) return
-    const confirmed = window.confirm(`Delete "${filename.value}" from the media archive? This cannot be undone.`)
+    const confirmed = window.confirm(t('Delete "{name}" from the media archive? This cannot be undone.', {
+        name: filename.value,
+    }))
     if (!confirmed) return
     try {
         await sourcesStore.removeSource(currentSourceId.value)
@@ -500,7 +540,9 @@ async function deleteCurrent(): Promise<void> {
             error.value = e.message
         } else {
             const raw = e instanceof Error ? e.message : String(e)
-            error.value = `Could not reach the server to delete the file (${raw}). Check the browser console for the full request log.`
+            error.value = t('Could not reach the server to delete the file ({reason}). Check the browser console for the full request log.', {
+                reason: raw,
+            })
             console.error('typst editor: delete failed', e)
         }
         return
@@ -676,26 +718,26 @@ onMounted(() => {
         <div class="rounded-lg border border-border bg-card p-4 space-y-3">
             <div class="flex items-baseline justify-between gap-2 flex-wrap">
                 <div class="flex items-baseline gap-2">
-                    <label for="typst-filename" class="block text-sm font-medium text-foreground">Filename</label>
+                    <label for="typst-filename" class="block text-sm font-medium text-foreground">{{ t('Filename') }}</label>
                     <span
                         v-if="hasUnsavedChanges"
                         class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded border border-amber-500/40 text-amber-700 bg-amber-500/10 dark:text-amber-300"
-                        title="This buffer is not saved yet"
+                        :title="t('This buffer is not saved yet')"
                     >
                         <span class="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-                        Unsaved
+                        {{ t('Unsaved') }}
                     </span>
                     <span
                         v-else-if="hasOpenFile"
                         class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded border border-emerald-500/40 text-emerald-700 bg-emerald-500/10 dark:text-emerald-300"
-                        title="This buffer is saved"
+                        :title="t('This buffer is saved')"
                     >
                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                        Saved
+                        {{ t('Saved') }}
                     </span>
                 </div>
                 <span class="text-xs text-muted-foreground">
-                    Rendered by <code class="font-mono">POST /api/v1/typst/preview</code> — no DB writes
+                    {{ t('Rendered by') }} <code class="font-mono">{{ PREVIEW_ENDPOINT }}</code> — {{ t('no DB writes') }}
                 </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
@@ -703,7 +745,7 @@ onMounted(() => {
                     id="typst-filename"
                     v-model="filename"
                     type="text"
-                    placeholder="editor.typ"
+                    :placeholder="DEFAULT_FILENAME"
                     class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm font-mono focus:border-ring focus:ring-1 focus:ring-ring outline-none"
                     spellcheck="false"
                     autocomplete="off"
@@ -718,7 +760,7 @@ onMounted(() => {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                         </svg>
-                        Open
+                        {{ t('Open') }}
                         <span class="text-xs text-muted-foreground">({{ sourcesStore.sources.length }})</span>
                     </button>
                 </div>
@@ -731,12 +773,12 @@ onMounted(() => {
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                         <polyline points="14 2 14 8 20 8" />
                     </svg>
-                    New
+                    {{ t('New') }}
                 </button>
                 <button
                     type="button"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-muted-foreground text-sm font-medium hover:bg-muted"
-                    title="Clear the buffer and wipe the session-storage entry for this principal"
+                    :title="t('Clear the buffer and wipe the session-storage entry for this principal')"
                     data-testid="compile-form-clear"
                     @click="clearBuffer"
                 >
@@ -745,7 +787,7 @@ onMounted(() => {
                         <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                         <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
                     </svg>
-                    Clear
+                    {{ t('Clear') }}
                 </button>
                 <button
                     v-if="hasOpenFile"
@@ -753,14 +795,14 @@ onMounted(() => {
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-destructive/50 text-destructive text-sm font-medium hover:bg-destructive/10"
                     @click="deleteCurrent"
                 >
-                    Delete
+                    {{ t('Delete') }}
                 </button>
             </div>
             <div v-if="hasOpenFile" class="text-[10px] text-muted-foreground font-mono truncate">
-                id: {{ currentSourceId }}
+                {{ `id: ${currentSourceId}` }}
             </div>
 
-            <label for="typst-source" class="block text-sm font-medium text-foreground pt-2">Typst source</label>
+            <label for="typst-source" class="block text-sm font-medium text-foreground pt-2">{{ t('Typst source') }}</label>
             <EditorToolbar :editor-ref="editorRef">
                 <template #trailing>
                     <button
@@ -775,7 +817,7 @@ onMounted(() => {
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <polyline points="21 15 16 10 5 21" />
                         </svg>
-                        Image
+                        {{ t('Image') }}
                     </button>
                     <button
                         type="button"
@@ -790,7 +832,7 @@ onMounted(() => {
                             <line x1="9" y1="13" x2="13" y2="13" />
                             <line x1="11" y1="17" x2="15" y2="17" />
                         </svg>
-                        Template
+                        {{ t('Template') }}
                     </button>
                 </template>
             </EditorToolbar>
@@ -799,15 +841,15 @@ onMounted(() => {
                     ref="editorRef"
                     v-model="source"
                     :rows="18"
-                    placeholder="Type Typst markup, or click ‘Load example’ to start from a template…"
-                    aria-label="Typst source"
+                    :placeholder="t('Type Typst markup, or click ‘Load example’ to start from a template…')"
+                    :aria-label="t('Typst source')"
                 />
                 <div
                     v-if="source === '' && filename === '' && !result"
                     class="absolute inset-0 flex items-center justify-center pointer-events-none"
                 >
                     <div class="pointer-events-auto flex flex-col items-center gap-2 px-4 py-3 rounded-md border border-border bg-card/95 shadow-sm">
-                        <p class="text-xs text-muted-foreground text-center">Empty editor buffer.</p>
+                        <p class="text-xs text-muted-foreground text-center">{{ t('Empty editor buffer.') }}</p>
                         <button
                             type="button"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted"
@@ -819,7 +861,7 @@ onMounted(() => {
                                 <line x1="9" y1="13" x2="15" y2="13" />
                                 <line x1="9" y1="17" x2="13" y2="17" />
                             </svg>
-                            Load example
+                            {{ t('Load example') }}
                         </button>
                     </div>
                 </div>
@@ -827,7 +869,7 @@ onMounted(() => {
             <div class="flex items-center justify-between gap-3 flex-wrap">
                 <div class="flex items-center gap-3 flex-wrap text-sm">
                     <fieldset class="flex items-center gap-3">
-                        <legend class="sr-only">Format</legend>
+                        <legend class="sr-only">{{ t('Format') }}</legend>
                         <label
                             v-for="opt in (['pdf', 'png', 'svg'] as const)"
                             :key="opt"
@@ -850,7 +892,7 @@ onMounted(() => {
                         <select
                             v-model.number="ppi"
                             class="px-2 py-1 rounded-md border border-input bg-background text-foreground text-xs font-mono focus:border-ring focus:ring-1 focus:ring-ring outline-none"
-                            aria-label="Raster resolution (PPI)"
+                            :aria-label="t('Raster resolution (PPI)')"
                         >
                             <option v-for="opt in PPI_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
                         </select>
@@ -863,7 +905,7 @@ onMounted(() => {
                         :disabled="busy || sourcesStore.saving"
                         @click="render"
                     >
-                        {{ busy ? 'Rendering…' : 'Preview' }}
+                        {{ busy ? t('Rendering…') : t('Preview') }}
                     </button>
                     <button
                         type="button"
@@ -871,7 +913,7 @@ onMounted(() => {
                         :disabled="busy || sourcesStore.saving"
                         @click="saveAndRender"
                     >
-                        {{ sourcesStore.saving ? 'Saving…' : busy ? 'Rendering…' : 'Save & Render' }}
+                        {{ sourcesStore.saving ? t('Saving…') : busy ? t('Rendering…') : t('Save & Render') }}
                     </button>
                 </div>
             </div>
@@ -926,14 +968,14 @@ onMounted(() => {
                         <span
                             class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded"
                             :class="d.severity === 'warning' ? 'bg-amber-500/20' : 'bg-destructive/20'"
-                        >{{ d.severity }}</span>
+                        >{{ SEVERITY_LABELS[d.severity] }}</span>
                         <span>{{ d.message }}</span>
                     </div>
                     <div
                         v-if="d.hint"
                         class="mt-1.5 pl-1 border-l-2 border-current/30 text-foreground/80"
                     >
-                        <span class="text-[10px] uppercase tracking-wide opacity-70">Hint</span>
+                        <span class="text-[10px] uppercase tracking-wide opacity-70">{{ t('Hint') }}</span>
                         <span class="ml-2">{{ d.hint }}</span>
                     </div>
                 </li>
@@ -943,16 +985,16 @@ onMounted(() => {
         <div v-if="result && resultBlobUrl" class="rounded-lg border border-border bg-card p-4 space-y-3">
             <div class="text-sm text-foreground flex items-baseline justify-between flex-wrap gap-2">
                 <div>
-                    Rendered <code class="font-mono">{{ result.format }}</code>
+                    {{ t('Rendered') }} <code class="font-mono">{{ result.format }}</code>
                     <span v-if="result.width !== null && result.height !== null">
-                        · {{ result.width }}×{{ result.height }}px
+                        · {{ `${result.width}×${result.height}px` }}
                     </span>
                     <span v-if="format === 'png'" class="text-muted-foreground">
                         · {{ ppi }} PPI
                     </span>
                 </div>
                 <span class="text-xs text-muted-foreground">
-                    Ephemeral — nothing saved
+                    {{ t('Ephemeral — nothing saved') }}
                 </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
@@ -960,20 +1002,20 @@ onMounted(() => {
                     type="button"
                     class="text-xs font-medium text-muted-foreground hover:text-foreground"
                     @click="downloadRender"
-                >Download</button>
+                >{{ t('Download') }}</button>
                 <span class="text-xs text-muted-foreground">
-                    Re-render after Save to refresh.
+                    {{ t('Re-render after Save to refresh.') }}
                 </span>
             </div>
             <div v-if="result.format === 'pdf'">
                 <iframe
                     :src="resultBlobUrl"
-                    title="Typst PDF render"
+                    :title="t('Typst PDF render')"
                     class="w-full h-96 border border-border rounded"
                 />
             </div>
             <div v-else-if="result.mime.startsWith('image/')">
-                <img :src="resultBlobUrl" :alt="`Typst render ${result.format}`" class="max-w-full h-auto mx-auto" />
+                <img :src="resultBlobUrl" :alt="t('Typst render {format}', { format: result.format })" class="max-w-full h-auto mx-auto" />
             </div>
         </div>
     </div>

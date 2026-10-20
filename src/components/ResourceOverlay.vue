@@ -43,9 +43,12 @@
  * `open=true` so the watcher-on-change path doesn't fire).
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useResourceStore } from '../stores/resources'
 import SourceEditor from './SourceEditor.vue'
 import type { ResourceKind, RenderedPreview } from '../composables/useResourceCardList'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
     open: boolean
@@ -66,7 +69,7 @@ const props = withDefaults(defineProps<{
     loadError: string | null
     ariaLabel?: string
 }>(), {
-    ariaLabel: 'Resource overlay',
+    ariaLabel: undefined,
 })
 
 const emit = defineEmits<{
@@ -99,12 +102,20 @@ watch(() => props.name, () => {
 })
 
 const title = computed(() => {
-    const label = props.kind === 'template' ? 'Template' : 'Example'
-    return editing.value ? `Editing ${label.toLowerCase()}: ${props.name}` : `${label}: ${props.name}`
+    const name = props.name
+    if (editing.value) {
+        return props.kind === 'template'
+            ? t('Editing template: {name}', { name })
+            : t('Editing example: {name}', { name })
+    }
+    return props.kind === 'template'
+        ? t('Template: {name}', { name })
+        : t('Example: {name}', { name })
 })
 const canEdit = computed(() => props.origin === 'principal')
 const canDelete = computed(() => props.origin === 'principal')
 const canRender = computed(() => props.kind === 'example')
+const dialogLabel = computed<string>(() => props.ariaLabel ?? t('Resource overlay'))
 
 function snippetFor(name: string): string {
     return props.kind === 'template'
@@ -169,7 +180,7 @@ async function saveEdit(): Promise<void> {
             ? await store.updateTemplate(props.name, pendingContent.value)
             : await store.updateExample(props.name, pendingContent.value)
         if (updated === null) {
-            saveError.value = store.error ?? 'Failed to save.'
+            saveError.value = store.error ?? t('Failed to save.')
             return
         }
         emit('saved', { name: props.name, content: pendingContent.value })
@@ -233,7 +244,7 @@ onBeforeUnmount(() => {
         ref="dialogRef"
         class="fixed inset-0 z-50 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
         aria-modal="true"
-        :aria-label="ariaLabel"
+        :aria-label="dialogLabel"
         data-testid="resource-overlay-dialog"
         @click="onDialogClick"
         @keydown="onKey"
@@ -255,7 +266,7 @@ onBeforeUnmount(() => {
                         class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded border border-amber-500/40 text-amber-700 bg-amber-500/10"
                     >
                         <span class="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-                        Unsaved
+                        {{ t('Unsaved') }}
                     </span>
                     <span
                         v-if="origin === 'skill'"
@@ -265,26 +276,26 @@ onBeforeUnmount(() => {
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                             <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                         </svg>
-                        Built-in
+                        {{ t('Built-in') }}
                     </span>
                     <span
                         v-else
                         class="shrink-0 text-[10px] font-medium uppercase tracking-wide rounded border border-border text-muted-foreground bg-muted px-1.5 py-0.5"
-                    >Your upload</span>
+                    >{{ t('Your upload') }}</span>
                 </div>
                 <button
                     type="button"
                     class="text-xs text-muted-foreground hover:text-foreground"
                     data-testid="resource-overlay-close"
                     @click="close"
-                >Close</button>
+                >{{ t('Close') }}</button>
             </header>
 
             <div class="flex-1 overflow-hidden p-3 min-h-0">
                 <div
                     v-if="loading"
                     class="h-full flex items-center justify-center text-sm text-muted-foreground"
-                >Loading source…</div>
+                >{{ t('Loading source…') }}</div>
                 <div
                     v-else-if="loadError !== null"
                     class="h-full flex items-center justify-center text-sm text-destructive"
@@ -295,12 +306,12 @@ onBeforeUnmount(() => {
                 >
                     <div class="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
                         <span>
-                            Render preview · <code class="font-mono">{{ rendered.format }}</code>
+                            {{ t('Render preview') }} · <code class="font-mono">{{ rendered.format }}</code>
                             <span v-if="rendered.width !== null && rendered.height !== null">
-                                · {{ rendered.width }}×{{ rendered.height }}px
+                                · {{ `${rendered.width}×${rendered.height}px` }}
                             </span>
                         </span>
-                        <span>Ephemeral — nothing saved</span>
+                        <span>{{ t('Ephemeral — nothing saved') }}</span>
                     </div>
                     <div class="flex-1 min-h-0 overflow-auto flex items-center justify-center bg-muted rounded">
                         <img
@@ -315,7 +326,7 @@ onBeforeUnmount(() => {
                             target="_blank"
                             rel="noopener"
                             class="text-sm font-medium text-primary hover:text-primary/80"
-                        >Open PDF</a>
+                        >{{ t('Open PDF') }}</a>
                     </div>
                 </div>
                 <SourceEditor
@@ -323,7 +334,7 @@ onBeforeUnmount(() => {
                     :model-value="editing ? pendingContent : content"
                     :rows="22"
                     :read-only="!editing"
-                    :aria-label="editing ? 'Edit resource source' : 'Resource source (read-only)'"
+                    :aria-label="editing ? t('Edit resource source') : t('Resource source (read-only)')"
                     @update:model-value="pendingContent = $event"
                 />
             </div>
@@ -352,14 +363,14 @@ onBeforeUnmount(() => {
                             :disabled="saving"
                             data-testid="resource-overlay-cancel"
                             @click="cancelEdit"
-                        >Cancel</button>
+                        >{{ t('Cancel') }}</button>
                         <button
                             type="button"
                             class="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
                             :disabled="saving || pendingContent === content"
                             data-testid="resource-overlay-save"
                             @click="saveEdit"
-                        >{{ saving ? 'Saving…' : 'Save' }}</button>
+                        >{{ saving ? t('Saving…') : t('Save') }}</button>
                     </div>
                 </template>
                 <template v-else>
@@ -371,10 +382,10 @@ onBeforeUnmount(() => {
                                 'shrink-0 rounded px-2 py-1 text-xs font-medium transition-colors',
                                 copied ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                             ]"
-                            :aria-label="`Copy Typst snippet for ${name}`"
+                            :aria-label="t('Copy Typst snippet for {name}', { name })"
                             data-testid="resource-overlay-copy"
                             @click="copyImport"
-                        >{{ copied ? 'Copied' : 'Copy' }}</button>
+                        >{{ copied ? t('Copied') : t('Copy') }}</button>
                     </div>
                     <div class="flex items-center gap-2">
                         <button
@@ -384,7 +395,7 @@ onBeforeUnmount(() => {
                             :disabled="rendering || loading || content === ''"
                             data-testid="resource-overlay-render"
                             @click="emit('render')"
-                        >{{ rendering ? 'Rendering…' : rendered !== null ? 'Re-render' : 'Render' }}</button>
+                        >{{ rendering ? t('Rendering…') : rendered !== null ? t('Re-render') : t('Render') }}</button>
                         <button
                             v-if="canEdit"
                             type="button"
@@ -392,14 +403,14 @@ onBeforeUnmount(() => {
                             :disabled="loading || content === ''"
                             data-testid="resource-overlay-edit"
                             @click="startEdit"
-                        >Edit</button>
+                        >{{ t('Edit') }}</button>
                         <button
                             type="button"
                             class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted disabled:opacity-50"
                             :disabled="loading || content === ''"
                             data-testid="resource-overlay-open-copy"
                             @click="emit('open-in-editor')"
-                        >Open Copy in Editor</button>
+                        >{{ t('Open Copy in Editor') }}</button>
                         <button
                             v-if="canDelete"
                             type="button"
@@ -407,7 +418,7 @@ onBeforeUnmount(() => {
                             :disabled="loading"
                             data-testid="resource-overlay-delete"
                             @click="emit('delete')"
-                        >Delete</button>
+                        >{{ t('Delete') }}</button>
                     </div>
                 </template>
             </footer>

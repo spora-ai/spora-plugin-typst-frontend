@@ -32,6 +32,7 @@
  *   (no override on POST).
  */
 import { computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useResourceStore } from '../stores/resources'
 import { useImagesStore } from '../stores/images'
 import { useSourcesStore } from '../stores/sources'
@@ -51,12 +52,14 @@ import PrincipalChipRow from '../components/PrincipalChipRow.vue'
 
 const TABS: readonly Tab[] = ['fonts', 'templates', 'examples', 'images', 'editor']
 
+const { t } = useI18n()
+
 const TAB_LABELS: Record<Tab, string> = {
-    fonts: 'Fonts',
-    templates: 'Templates',
-    examples: 'Examples',
-    images: 'Images',
-    editor: 'Editor',
+    fonts: t('Fonts'),
+    templates: t('Templates'),
+    examples: t('Examples'),
+    images: t('Images'),
+    editor: t('Editor'),
 }
 
 const props = defineProps<{
@@ -114,8 +117,12 @@ onMounted(async () => {
 <template>
     <div class="mx-auto max-w-6xl p-6 space-y-5">
         <header class="flex items-baseline justify-between gap-3">
+            <!--
+              "Typst" is the product name — the same in every language,
+              so it is not a catalogue entry.
+            -->
             <h1 class="text-xl font-semibold text-foreground">Typst</h1>
-            <span class="text-xs text-muted-foreground">Per-principal font / template / example / image library</span>
+            <span class="text-xs text-muted-foreground">{{ t('Per-principal font / template / example / image library') }}</span>
         </header>
 
         <AlertBanner

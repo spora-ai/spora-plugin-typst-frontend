@@ -30,6 +30,9 @@
  * without measuring scroll offsets manually.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
     /** Currently active level (1–5) for the caret's line, if known. */
@@ -50,11 +53,25 @@ const popoverRef = ref<HTMLDivElement | null>(null)
 
 const levels = [1, 2, 3, 4, 5] as const
 
+/**
+ * The heading level's name, as the popover lists it.
+ *
+ * `H1`–`H5` are the Typst markers themselves and stay as they are;
+ * the name next to them is copy.
+ */
+const LEVEL_NAMES: Record<number, string> = {
+    1: t('Title'),
+    2: t('Section'),
+    3: t('Subsection'),
+    4: t('Sub-subsection'),
+    5: t('Minor heading'),
+}
+
 const triggerLabel = computed(() => {
     if (props.currentLevel !== null && props.currentLevel !== undefined) {
         return `H${props.currentLevel}`
     }
-    return 'Heading'
+    return t('Heading')
 })
 
 function toggle(): void {
@@ -134,7 +151,7 @@ onBeforeUnmount(() => {
             class="px-2 py-1 rounded text-xs font-medium text-foreground hover:bg-background hover:text-foreground border border-transparent hover:border-border transition-colors inline-flex items-center gap-1 disabled:opacity-50"
             :class="open ? 'bg-background border-border' : ''"
             :disabled="props.disabled"
-            :aria-label="props.ariaLabel ?? 'Heading level'"
+            :aria-label="props.ariaLabel ?? t('Heading level')"
             :aria-haspopup="true"
             :aria-expanded="open"
             data-testid="editor-tool-heading"
@@ -176,9 +193,9 @@ onBeforeUnmount(() => {
                 :data-heading-level="level"
                 @click="pick(level)"
             >
-                <span class="font-mono text-xs shrink-0 w-8 text-muted-foreground">H{{ level }}</span>
+                <span class="font-mono text-xs shrink-0 w-8 text-muted-foreground">{{ `H${level}` }}</span>
                 <span class="font-mono text-xs truncate">=</span>
-                <span class="truncate">{{ level === 1 ? 'Title' : level === 2 ? 'Section' : level === 3 ? 'Subsection' : level === 4 ? 'Sub-subsection' : 'Minor heading' }}</span>
+                <span class="truncate">{{ LEVEL_NAMES[level] }}</span>
             </button>
         </div>
     </div>

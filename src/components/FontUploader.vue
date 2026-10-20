@@ -12,7 +12,10 @@
  * operator into the dead-end path.
  */
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useResourceStore } from '../stores/resources'
+
+const { t } = useI18n()
 
 const store = useResourceStore()
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -49,7 +52,9 @@ function readFileAsBase64(file: File): Promise<string> {
 
 async function handleFile(file: File): Promise<void> {
     if (!isAllowed(file.name)) {
-        store.error = `Unsupported font extension. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}.`
+        store.error = t('Unsupported font extension. Allowed: {extensions}.', {
+            extensions: ALLOWED_EXTENSIONS.join(', '),
+        })
         return
     }
     try {
@@ -60,7 +65,7 @@ async function handleFile(file: File): Promise<void> {
             return
         }
     } catch (e) {
-        store.error = e instanceof Error ? e.message : 'Upload failed.'
+        store.error = e instanceof Error ? e.message : t('Upload failed.')
     }
 }
 
@@ -102,9 +107,9 @@ function onDragLeave(): void {
     >
         <div class="flex items-center justify-between gap-4 flex-wrap">
             <div class="min-w-0">
-                <p class="text-sm font-medium text-foreground">Upload font</p>
+                <p class="text-sm font-medium text-foreground">{{ t('Upload font') }}</p>
                 <p class="text-xs text-muted-foreground mt-0.5">
-                    Supported: {{ ALLOWED_EXTENSIONS.join(', ') }} (≤ 5 MiB)
+                    {{ t('Supported: {extensions} (≤ 5 MiB)', { extensions: ALLOWED_EXTENSIONS.join(', ') }) }}
                 </p>
             </div>
             <div class="flex items-center gap-2">
@@ -119,9 +124,9 @@ function onDragLeave(): void {
                         <polyline points="17 8 12 3 7 8" />
                         <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
-                    Choose file
+                    {{ t('Choose file') }}
                 </button>
-                <label for="typst-font-upload" class="text-xs text-muted-foreground cursor-pointer">or drop one here</label>
+                <label for="typst-font-upload" class="text-xs text-muted-foreground cursor-pointer">{{ t('or drop one here') }}</label>
             </div>
         </div>
         <input
@@ -129,7 +134,7 @@ function onDragLeave(): void {
             ref="fileInput"
             type="file"
             :accept="ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(',')"
-            aria-label="Upload font file"
+            :aria-label="t('Upload font file')"
             class="hidden"
             @change="onFileChange"
         />

@@ -8,7 +8,10 @@
  * coordinate `render-example` either — kept as a no-op
  * telemetry signal.
  */
+import { useI18n } from 'vue-i18n'
 import ResourceCardList from './ResourceCardList.vue'
+
+const { t } = useI18n()
 
 defineEmits<{
     (e: 'open-in-editor', payload: { name: string; content: string; filename: string }): void
@@ -18,8 +21,8 @@ defineEmits<{
 <template>
     <ResourceCardList
         kind="example"
-        empty-text="No example patterns yet."
-        built-in-heading-text="Built-in"
+        :empty-text="t('No example patterns yet.')"
+        :built-in-heading-text="t('Built-in')"
         @open-in-editor="$emit('open-in-editor', $event)"
     />
 </template>

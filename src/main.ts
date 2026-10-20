@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import { setApi } from './api/client'
+import { createPluginI18n } from './i18n'
 import type { PluginHostContext } from './shims'
 
 /**
@@ -35,6 +36,13 @@ const SporaApp: MountContract = {
 
         const app = createApp(App, { hostContext })
         app.use(createPinia())
+
+        // The plugin builds its own i18n instance from its own
+        // catalogue; the host's active language comes in through
+        // the context. `en` is the fallback, so an untranslated key
+        // renders as its English source.
+        app.use(createPluginI18n(hostContext.locale))
+
         app.mount(target)
 
         const typedTarget = target as MountTarget

@@ -13,6 +13,10 @@
  * (blue, informational — used by the Playground's compile-endpoint
  * degraded-mode notice).
  */
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 defineProps<{
     variant?: 'error' | 'info'
     message: string | null
@@ -38,7 +42,7 @@ defineEmits<{
         <button
             type="button"
             class="shrink-0 text-current opacity-60 hover:opacity-100"
-            aria-label="Dismiss"
+            :aria-label="t('Dismiss')"
             @click="$emit('dismiss')"
         >×</button>
     </div>

@@ -17,8 +17,11 @@
  * threads the principal; the per-resource read forgotten it.
  */
 import { onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { withPrincipal } from '../api/client'
 import { useImagesStore } from '../stores/images'
+
+const { t } = useI18n()
 
 const store = useImagesStore()
 
@@ -47,7 +50,7 @@ async function copyUrl(url: string): Promise<void> {
 }
 
 async function confirmAndDelete(name: string, filename: string): Promise<void> {
-    if (!confirm(`Delete image "${filename}"? This cannot be undone.`)) return
+    if (!confirm(t('Delete image "{name}"? This cannot be undone.', { name: filename }))) return
     try {
         await store.removeImage(name)
     } catch {
@@ -74,11 +77,11 @@ function scopedUrl(url: string): string {
         <div
             v-if="store.loading && (store.images ?? []).length === 0"
             class="col-span-full text-center text-muted-foreground py-6"
-        >Loading…</div>
+        >{{ t('Loading…') }}</div>
         <div
             v-else-if="(store.images ?? []).length === 0"
             class="col-span-full text-center text-muted-foreground py-6"
-        >No images uploaded yet. Drop a PNG / JPEG / WebP / SVG file above.</div>
+        >{{ t('No images uploaded yet. Drop a PNG / JPEG / WebP / SVG file above.') }}</div>
         <div
             v-for="image in (store.images ?? [])"
             :key="image.name"
@@ -106,13 +109,13 @@ function scopedUrl(url: string): string {
                         type="button"
                         class="text-xs font-medium text-primary hover:text-primary/80"
                         @click="copyUrl(scopedUrl(image.url))"
-                    >Copy URL</button>
+                    >{{ t('Copy URL') }}</button>
                     <button
                         type="button"
                         class="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-40"
                         :disabled="store.uploading"
                         @click="confirmAndDelete(image.name, image.name)"
-                    >Delete</button>
+                    >{{ t('Delete') }}</button>
                 </div>
             </div>
         </div>
