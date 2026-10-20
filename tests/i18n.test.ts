@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
-import { createPluginI18n } from '../src/i18n'
+import { createPluginI18n, t } from '../src/i18n'
 import en from '../src/locales/en.json'
 import de from '../src/locales/de.json'
 import AlertBanner from '../src/components/AlertBanner.vue'
@@ -51,6 +51,14 @@ describe('the panel in German', () => {
         })
         expect(wrapper.find('button').attributes('aria-label')).toBe('Ausblenden')
         wrapper.unmount()
+    })
+
+    it('translates through the module-level helper the stores use', () => {
+        const instance = createPluginI18n('de')
+        expect(instance.global.locale.value).toBe('de')
+        expect(t('Delete')).toBe('Löschen')
+        expect(t('Delete font "{name}"? This cannot be undone.', { name: 'Inter.otf' }))
+            .toBe('Schrift „Inter.otf“ löschen? Das kann nicht rückgängig gemacht werden.')
     })
 
     it('interpolates a placeholder into the German value', () => {

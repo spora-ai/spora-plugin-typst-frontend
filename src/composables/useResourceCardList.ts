@@ -7,6 +7,18 @@ import { useResourceStore } from '../stores/resources'
 
 export type ResourceKind = 'template' | 'example'
 
+/**
+ * The message the overlay shows when a source cannot be read.
+ *
+ * The kind is part of the sentence, so each kind gets its own message
+ * rather than a concatenated label.
+ */
+function readErrorMessage(kind: ResourceKind): string {
+    return kind === 'template'
+        ? t('failed to read template')
+        : t('failed to read example')
+}
+
 export interface ResourceSummary {
     name: string
     size: number
@@ -176,11 +188,7 @@ export function useResourceCardList(kind: ResourceKind) {
             const source = await fetchSource(name, store.principalId ?? undefined)
             sourceByName.value = { ...sourceByName.value, [name]: source }
         } catch (e) {
-            loadError.value = e instanceof ApiError
-                ? e.message
-                : (kind === 'template'
-                    ? t('failed to read template')
-                    : t('failed to read example'))
+            loadError.value = e instanceof ApiError ? e.message : readErrorMessage(kind)
         } finally {
             loadingName.value = null
         }
