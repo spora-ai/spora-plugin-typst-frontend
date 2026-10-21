@@ -23,9 +23,24 @@
  */
 export type ToolKind = 'wrap' | 'link-dialog'
 
+/**
+ * The catalogue keys of the formatting tools.
+ *
+ * The toolbar resolves each key with `t()`, so this union is what its
+ * label map is typed over: a tool whose label is missing from the map
+ * is a compile error rather than an `undefined` that reaches the DOM.
+ */
+export type ToolbarToolKey = 'Bold' | 'Italic' | 'Underline' | 'Link'
+
 export interface ToolbarTool {
-    /** Visible button label (also the aria-label). */
-    label: string
+    /**
+     * Catalogue key — the English source string of the button label.
+     *
+     * The toolbar resolves it with `t()`, so the visible label follows
+     * the panel's language while this stays a stable identifier (the
+     * `data-testid` is derived from it).
+     */
+    key: ToolbarToolKey
     kind: ToolKind
     /**
      * Snippet that lands in the buffer when the operator clicks
@@ -33,8 +48,11 @@ export interface ToolbarTool {
      * (Bold, Italic, etc.) this is a placeholder like `*bold
      * text*` — the caret lands in the middle so the next
      * keystroke starts inside the delimiters.
+     *
+     * Typst markup, not copy: it goes into the operator's document,
+     * so it is not translated.
      */
-    placeholder: string
+    snippet: string
     /**
      * Wrap `selection` in the tool's delimiters. Returns the
      * snippet the toolbar should splice into the buffer.
@@ -48,9 +66,9 @@ export interface ToolbarTool {
  * subsequent keystroke starts inside the markers.
  */
 const boldTool: ToolbarTool = {
-    label: 'Bold',
+    key: 'Bold',
     kind: 'wrap',
-    placeholder: '*bold text*',
+    snippet: '*bold text*',
     wrap: (selection) => `*${selection}*`,
 }
 
@@ -59,9 +77,9 @@ const boldTool: ToolbarTool = {
  * `_italic text_`.
  */
 const italicTool: ToolbarTool = {
-    label: 'Italic',
+    key: 'Italic',
     kind: 'wrap',
-    placeholder: '_italic text_',
+    snippet: '_italic text_',
     wrap: (selection) => `_${selection}_`,
 }
 
@@ -72,9 +90,9 @@ const italicTool: ToolbarTool = {
  * `[]` bracket the text.
  */
 const underlineTool: ToolbarTool = {
-    label: 'Underline',
+    key: 'Underline',
     kind: 'wrap',
-    placeholder: '#underline[underlined]',
+    snippet: '#underline[underlined]',
     wrap: (selection) => `#underline[${selection}]`,
 }
 
@@ -86,9 +104,9 @@ const underlineTool: ToolbarTool = {
  * `EditorToolbar.vue`.
  */
 const linkTool: ToolbarTool = {
-    label: 'Link',
+    key: 'Link',
     kind: 'link-dialog',
-    placeholder: '',
+    snippet: '',
     wrap: () => '',
 }
 
@@ -111,8 +129,8 @@ export const FORMATTING_TOOLS: readonly ToolbarTool[] = [
  *
  *   - With a non-empty selection: call `tool.wrap(selection)`.
  *     The wrap function is responsible for adding delimiters.
- *   - With a collapsed caret: insert `tool.placeholder` at the
- *     caret. The placeholder's structure mirrors what the wrap
+ *   - With a collapsed caret: insert `tool.snippet` at the
+ *     caret. The snippet's structure mirrors what the wrap
  *     function would have produced so the operator can type into
  *     it without re-typing markers.
  *
@@ -128,7 +146,7 @@ export function applyTool(tool: ToolbarTool, selection: string | null): string {
     if (selection !== null && selection !== '') {
         return tool.wrap(selection)
     }
-    return tool.placeholder
+    return tool.snippet
 }
 
 /**

@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
+import { createPluginI18n } from './i18n'
 
 /**
  * Dev-mode entry. The production mount/unmount contract lives in
@@ -12,6 +13,9 @@ import App from './App.vue'
  * To exercise the real wire surface, run the host SPA's plugin
  * dev-proxy (`SPORA_PLUGIN_DEV_PORTS=typst:5176 npm run dev` in
  * `spora-frontend`) and visit `/apps/typst`.
+ *
+ * The language follows `?locale=de` so the German catalogue can be
+ * checked by hand; the default is English.
  */
 
 function devStubData(path: string): Record<string, unknown> {
@@ -28,14 +32,18 @@ const devApi = {
     delete: async (): Promise<unknown> => undefined,
 }
 
+const locale = new URLSearchParams(location.search).get('locale') ?? 'en'
+
 const hostContext = {
     api: devApi,
     pinia: null,
     theme: 'light' as const,
     route: null,
     router: null,
+    locale,
 }
 
 const app = createApp(App, { hostContext })
 app.use(createPinia())
+app.use(createPluginI18n(locale))
 app.mount('#app')

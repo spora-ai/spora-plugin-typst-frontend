@@ -18,6 +18,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
+import { t } from '../i18n'
 import * as sourcesApi from '../api/sources'
 import type {
     PlaygroundSource,
@@ -75,7 +76,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
             hasLoadedOnce = true
             recomputeKindCounts(fetched)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to load playground sources.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to load playground sources.')
         } finally {
             loading.value = false
         }
@@ -105,7 +106,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
         try {
             return await sourcesApi.getSource(id, principalId.value)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to open playground source.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to open playground source.')
             return null
         }
     }
@@ -136,7 +137,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
             recomputeKindCounts(sources.value)
             return created
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to save playground source.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to save playground source.')
             return null
         } finally {
             saving.value = false
@@ -182,7 +183,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
             }
             return saved
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to save playground source.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to save playground source.')
             return null
         } finally {
             saving.value = false
@@ -197,7 +198,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
             sources.value = sources.value.filter((s) => s.id !== id)
             recomputeKindCounts(sources.value)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to delete playground source.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to delete playground source.')
             throw e
         } finally {
             saving.value = false

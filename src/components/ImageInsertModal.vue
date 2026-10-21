@@ -31,10 +31,13 @@
  * `showModal()` is called from onMounted (the parent mounts
  * with `open=true` so the watcher-on-change path doesn't fire).
  */
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { withPrincipal } from '../api/client'
 import { useImagesStore } from '../stores/images'
 import type { ImageResource, MediaArchiveImage } from '../types'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
     open: boolean
@@ -46,7 +49,7 @@ const props = withDefaults(defineProps<{
 }>(), {
     loading: false,
     activeTab: 'plugin',
-    ariaLabel: 'Insert image',
+    ariaLabel: undefined,
 })
 
 const emit = defineEmits<{
@@ -56,9 +59,17 @@ const emit = defineEmits<{
     (e: 'change-tab', tab: 'plugin' | 'media'): void
 }>()
 
+/**
+ * The snippet the modal documents — Typst markup, not copy, so it is
+ * the same in every language.
+ */
+const IMAGE_SNIPPET = '#image("…", width: 80%)'
+
 const dialogRef = ref<HTMLDialogElement | null>(null)
 const internalTab = ref<'plugin' | 'media'>(props.activeTab)
 const imagesStore = useImagesStore()
+
+const dialogLabel = computed<string>(() => props.ariaLabel ?? t('Insert image'))
 
 function scopedPluginUrl(url: string): string {
     return withPrincipal(url, imagesStore.principalId ?? undefined)
@@ -123,7 +134,7 @@ onBeforeUnmount(() => {
         ref="dialogRef"
         class="fixed inset-0 z-50 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
         aria-modal="true"
-        :aria-label="ariaLabel"
+        :aria-label="dialogLabel"
         data-testid="image-insert-modal"
         @click="onDialogClick"
         @keydown="onKey"
@@ -137,13 +148,13 @@ onBeforeUnmount(() => {
                 <h2
                     class="text-sm font-semibold text-foreground"
                     data-testid="image-insert-title"
-                >Insert image · <span class="text-muted-foreground font-normal">#image("…", width: 80%)</span></h2>
+                >{{ t('Insert image') }} · <span class="text-muted-foreground font-normal">{{ IMAGE_SNIPPET }}</span></h2>
                 <button
                     type="button"
                     class="text-xs text-muted-foreground hover:text-foreground"
                     data-testid="image-insert-close"
                     @click="close"
-                >Close</button>
+                >{{ t('Close') }}</button>
             </header>
 
             <div class="flex items-center gap-2 px-3 pt-2">
@@ -157,7 +168,7 @@ onBeforeUnmount(() => {
                     ]"
                     data-testid="image-insert-tab-plugin"
                     @click="onTabClick('plugin')"
-                >Plugin images ({{ pluginImages.length }})</button>
+                >{{ t('Plugin images ({count})', { count: pluginImages.length }) }}</button>
                 <button
                     type="button"
                     :class="[
@@ -168,22 +179,22 @@ onBeforeUnmount(() => {
                     ]"
                     data-testid="image-insert-tab-media"
                     @click="onTabClick('media')"
-                >Media archive ({{ mediaImages.length }})</button>
+                >{{ t('Media archive ({count})', { count: mediaImages.length }) }}</button>
             </div>
 
             <div class="flex-1 overflow-y-auto p-3">
                 <div
                     v-if="loading"
                     class="text-xs text-muted-foreground py-6 text-center"
-                >Loading…</div>
+                >{{ t('Loading…') }}</div>
                 <div
                     v-else-if="internalTab === 'plugin' && pluginImages.length === 0"
                     class="text-xs text-muted-foreground py-6 text-center"
-                >No plugin images. Upload some via the Images tab first.</div>
+                >{{ t('No plugin images. Upload some via the Images tab first.') }}</div>
                 <div
                     v-else-if="internalTab === 'media' && mediaImages.length === 0"
                     class="text-xs text-muted-foreground py-6 text-center"
-                >No media-archive images visible to the current principal.</div>
+                >{{ t('No media-archive images visible to the current principal.') }}</div>
                 <div
                     v-else
                     class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2"

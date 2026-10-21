@@ -32,14 +32,37 @@
  * No keyboard shortcuts in this commit — those are a follow-up.
  */
 import { ref, watchEffect } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
     FORMATTING_TOOLS,
     applyTool,
     caretOffsetForPlaceholder,
     type ToolbarTool,
+    type ToolbarToolKey,
 } from '../composables/useEditorToolbar'
 import HeadingMenu from './HeadingMenu.vue'
 import LinkInsertDialog from './LinkInsertDialog.vue'
+
+const { t } = useI18n()
+
+/**
+ * The formatting tools' button labels.
+ *
+ * The composable carries the catalogue *key* for each tool (its
+ * English source string); the visible label is resolved here so the
+ * button follows the panel's language while the key stays a stable
+ * identifier.
+ *
+ * Typed over `ToolbarToolKey` rather than `string`: a tool whose label
+ * is missing from this map is a compile error, not an `undefined` that
+ * reaches the DOM as an unlabelled button.
+ */
+const TOOL_LABELS: Record<ToolbarToolKey, string> = {
+    Bold: t('Bold'),
+    Italic: t('Italic'),
+    Underline: t('Underline'),
+    Link: t('Link'),
+}
 
 /**
  * Structural interface for the editor surface the toolbar drives.
@@ -200,7 +223,7 @@ function onLinkCancel(): void {
     <div
         class="sticky top-0 z-10 flex items-center gap-1 px-2 py-1.5 rounded-md border border-border bg-muted/60 backdrop-blur supports-[backdrop-filter]:bg-muted/40"
         role="toolbar"
-        aria-label="Editor formatting tools"
+        :aria-label="t('Editor formatting tools')"
     >
         <HeadingMenu
             :current-level="liveHeadingLevel"
@@ -211,14 +234,14 @@ function onLinkCancel(): void {
         <div class="flex items-center gap-1">
             <button
                 v-for="tool in FORMATTING_TOOLS"
-                :key="tool.label"
+                :key="tool.key"
                 type="button"
                 class="px-2 py-1 rounded text-xs font-medium text-foreground hover:bg-background hover:text-foreground border border-transparent hover:border-border transition-colors"
-                :aria-label="tool.label"
-                :title="tool.label"
-                :data-testid="`editor-tool-${tool.label.toLowerCase()}`"
+                :aria-label="TOOL_LABELS[tool.key]"
+                :title="TOOL_LABELS[tool.key]"
+                :data-testid="`editor-tool-${tool.key.toLowerCase()}`"
                 @click="onToolClick(tool)"
-            >{{ tool.label }}</button>
+            >{{ TOOL_LABELS[tool.key] }}</button>
         </div>
         <span class="mx-1 h-5 w-px bg-border" aria-hidden="true" />
         <slot name="trailing" />

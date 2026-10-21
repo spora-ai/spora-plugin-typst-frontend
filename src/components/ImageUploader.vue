@@ -11,8 +11,11 @@
  * the input event's `type`).
  */
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useImagesStore } from '../stores/images'
 import { readFileAsBase64 } from '../api/images'
+
+const { t } = useI18n()
 
 const store = useImagesStore()
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -39,7 +42,9 @@ function mimeFromName(name: string, fallback: string): string {
 async function handleFile(file: File): Promise<void> {
     const mime = mimeFromName(file.name, file.type)
     if (!ALLOWED_MIMES.includes(mime as (typeof ALLOWED_MIMES)[number])) {
-        store.error = `Unsupported image type "${mime || 'unknown'}". Allowed: PNG, JPEG, WebP, SVG.`
+        store.error = t('Unsupported image type "{mime}". Allowed: PNG, JPEG, WebP, SVG.', {
+            mime: mime || t('unknown'),
+        })
         return
     }
     try {
@@ -48,7 +53,7 @@ async function handleFile(file: File): Promise<void> {
         const result = await store.uploadImage(file.name, mime, content)
         if (result === null) return
     } catch (e) {
-        store.error = e instanceof Error ? e.message : 'Upload failed.'
+        store.error = e instanceof Error ? e.message : t('Upload failed.')
     }
 }
 
@@ -85,9 +90,9 @@ async function onDrop(event: DragEvent): Promise<void> {
     >
         <div class="flex items-center justify-between gap-4 flex-wrap">
             <div class="min-w-0">
-                <p class="text-sm font-medium text-foreground">Upload image</p>
+                <p class="text-sm font-medium text-foreground">{{ t('Upload image') }}</p>
                 <p class="text-xs text-muted-foreground mt-0.5">
-                    Supported: PNG, JPEG, WebP, SVG (≤ 5 MiB)
+                    {{ t('Supported: PNG, JPEG, WebP, SVG (≤ 5 MiB)') }}
                 </p>
             </div>
             <div class="flex items-center gap-2">
@@ -102,9 +107,9 @@ async function onDrop(event: DragEvent): Promise<void> {
                         <polyline points="17 8 12 3 7 8" />
                         <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
-                    Choose file
+                    {{ t('Choose file') }}
                 </button>
-                <label for="typst-image-upload" class="text-xs text-muted-foreground cursor-pointer">or drop one here</label>
+                <label for="typst-image-upload" class="text-xs text-muted-foreground cursor-pointer">{{ t('or drop one here') }}</label>
             </div>
         </div>
 
@@ -114,22 +119,22 @@ async function onDrop(event: DragEvent): Promise<void> {
             data-testid="image-rename-notice"
         >
             <div class="min-w-0">
-                <p class="font-medium">Filename renamed</p>
+                <p class="font-medium">{{ t('Filename renamed') }}</p>
                 <p class="mt-0.5 text-amber-800/90">
                     <span
                         v-if="store.lastRename.from"
                         class="font-mono"
                     >"{{ store.lastRename.from }}"</span>
-                    <span v-else>Your upload</span>
-                    was saved as
+                    <span v-else>{{ t('Your upload') }}</span>
+                    {{ t('was saved as') }}
                     <span class="font-mono">"{{ store.lastRename.to }}"</span>
-                    because filenames are restricted to letters, digits, dot, underscore and dash. Rename the file before re-uploading to keep the original name.
+                    {{ t('because filenames are restricted to letters, digits, dot, underscore and dash. Rename the file before re-uploading to keep the original name.') }}
                 </p>
             </div>
             <button
                 type="button"
                 class="shrink-0 text-amber-900/70 hover:text-amber-900"
-                aria-label="Dismiss rename notice"
+                :aria-label="t('Dismiss rename notice')"
                 data-testid="image-rename-dismiss"
                 @click="dismissRename"
             >×</button>
@@ -140,7 +145,7 @@ async function onDrop(event: DragEvent): Promise<void> {
             ref="fileInput"
             type="file"
             accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
-            aria-label="Upload image file"
+            :aria-label="t('Upload image file')"
             class="hidden"
             @change="onFileChange"
         />

@@ -23,7 +23,10 @@
  * handling consistent — Esc / backdrop click work without
  * custom handlers.
  */
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
     open: boolean
@@ -33,13 +36,22 @@ const props = withDefaults(defineProps<{
 }>(), {
     initialUrl: '',
     initialLabel: '',
-    ariaLabel: 'Insert link',
+    ariaLabel: undefined,
 })
 
 const emit = defineEmits<{
     (e: 'confirm', payload: { url: string; label: string }): void
     (e: 'cancel'): void
 }>()
+
+/**
+ * The snippet the dialog documents — Typst markup, not copy, so it is
+ * the same in every language.
+ */
+const LINK_SNIPPET = '#link("<url>")[<label>]'
+
+/** The example address the URL field suggests — a URL, not copy. */
+const EXAMPLE_URL = 'https://example.com'
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 const url = ref(props.initialUrl)
@@ -63,6 +75,8 @@ watch(() => props.open, (open) => {
 
 const urlInputRef = ref<HTMLInputElement | null>(null)
 const labelInputRef = ref<HTMLInputElement | null>(null)
+
+const dialogLabel = computed<string>(() => props.ariaLabel ?? t('Insert link'))
 
 function onConfirm(e: Event): void {
     e.preventDefault()
@@ -103,7 +117,7 @@ onBeforeUnmount(() => {
         ref="dialogRef"
         class="fixed inset-0 z-50 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
         aria-modal="true"
-        :aria-label="ariaLabel"
+        :aria-label="dialogLabel"
         data-testid="link-insert-dialog"
         @click="onDialogClick"
         @keydown="onKey"
@@ -117,13 +131,13 @@ onBeforeUnmount(() => {
                 <h2
                     class="text-sm font-semibold text-foreground"
                     data-testid="link-insert-title"
-                >Insert link</h2>
+                >{{ t('Insert link') }}</h2>
                 <button
                     type="button"
                     class="text-xs text-muted-foreground hover:text-foreground"
                     data-testid="link-insert-close"
                     @click="close"
-                >Close</button>
+                >{{ t('Close') }}</button>
             </header>
 
             <div class="p-3 space-y-3">
@@ -133,27 +147,27 @@ onBeforeUnmount(() => {
                         ref="urlInputRef"
                         v-model="url"
                         type="url"
-                        placeholder="https://example.com"
+                        :placeholder="EXAMPLE_URL"
                         class="w-full px-2 py-1.5 rounded-md border border-input bg-background text-foreground text-sm font-mono focus:border-ring focus:ring-1 focus:ring-ring outline-none"
-                        aria-label="Link URL"
+                        :aria-label="t('Link URL')"
                         data-testid="link-insert-url"
                         required
                     />
                 </label>
                 <label class="block space-y-1">
-                    <span class="block text-xs font-medium text-foreground">Label</span>
+                    <span class="block text-xs font-medium text-foreground">{{ t('Label') }}</span>
                     <input
                         ref="labelInputRef"
                         v-model="label"
                         type="text"
-                        placeholder="link text"
+                        :placeholder="t('link text')"
                         class="w-full px-2 py-1.5 rounded-md border border-input bg-background text-foreground text-sm font-mono focus:border-ring focus:ring-1 focus:ring-ring outline-none"
-                        aria-label="Link label"
+                        :aria-label="t('Link label')"
                         data-testid="link-insert-label"
                     />
                 </label>
                 <p class="text-[10px] text-muted-foreground">
-                    Inserted as <code class="font-mono">#link("&lt;url&gt;")[&lt;label&gt;]</code>
+                    {{ t('Inserted as') }} <code class="font-mono">{{ LINK_SNIPPET }}</code>
                 </p>
             </div>
 
@@ -163,13 +177,13 @@ onBeforeUnmount(() => {
                     class="px-3 py-1.5 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted"
                     data-testid="link-insert-cancel"
                     @click="close"
-                >Cancel</button>
+                >{{ t('Cancel') }}</button>
                 <button
                     type="submit"
                     class="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
                     :disabled="url === ''"
                     data-testid="link-insert-confirm"
-                >Insert</button>
+                >{{ t('Insert') }}</button>
             </footer>
         </form>
     </dialog>

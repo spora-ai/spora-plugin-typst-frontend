@@ -72,7 +72,10 @@
  * and the highlight overlay re-renders synchronously.
  */
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { highlightTypst } from 'highlightjs-typst/highlight'
+
+const { t } = useI18n()
 
 const props = withDefaults(
     defineProps<{
@@ -86,7 +89,7 @@ const props = withDefaults(
         placeholder: '',
         rows: 18,
         readOnly: false,
-        ariaLabel: 'Typst source',
+        ariaLabel: undefined,
     },
 )
 
@@ -96,6 +99,8 @@ const emit = defineEmits<{
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const highlightRef = ref<HTMLPreElement | null>(null)
+
+const editorLabel = computed<string>(() => props.ariaLabel ?? t('Typst source'))
 
 const highlightedSource = computed(() => highlightTypst(props.modelValue) + '\n')
 
@@ -328,7 +333,7 @@ defineExpose({
             :rows="rows"
             :placeholder="placeholder"
             :readonly="readOnly"
-            :aria-label="ariaLabel"
+            :aria-label="editorLabel"
             class="typst-editor__textarea"
             spellcheck="false"
             autocomplete="off"

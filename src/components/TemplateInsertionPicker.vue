@@ -23,8 +23,11 @@
  * `showModal()` is called from onMounted (the parent mounts
  * with `open=true` so the watcher-on-change path doesn't fire).
  */
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { TemplateResource } from '../types'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
     open: boolean
@@ -33,7 +36,7 @@ const props = withDefaults(defineProps<{
     ariaLabel?: string
 }>(), {
     loading: false,
-    ariaLabel: 'Insert template',
+    ariaLabel: undefined,
 })
 
 const emit = defineEmits<{
@@ -41,7 +44,15 @@ const emit = defineEmits<{
     (e: 'insert', payload: { name: string }): void
 }>()
 
+/**
+ * The snippet the modal documents — Typst markup, not copy, so it is
+ * the same in every language.
+ */
+const TEMPLATE_SNIPPET = '#import "templates/X.typ"'
+
 const dialogRef = ref<HTMLDialogElement | null>(null)
+
+const dialogLabel = computed<string>(() => props.ariaLabel ?? t('Insert template'))
 
 function close(): void {
     emit('close')
@@ -89,7 +100,7 @@ onBeforeUnmount(() => {
         ref="dialogRef"
         class="fixed inset-0 z-50 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
         aria-modal="true"
-        :aria-label="ariaLabel"
+        :aria-label="dialogLabel"
         data-testid="template-insertion-modal"
         @click="onDialogClick"
         @keydown="onKey"
@@ -103,24 +114,24 @@ onBeforeUnmount(() => {
                 <h2
                     class="text-sm font-semibold text-foreground"
                     data-testid="template-insertion-title"
-                >Insert template · <span class="text-muted-foreground font-normal">#import "templates/X.typ"</span></h2>
+                >{{ t('Insert template') }} · <span class="text-muted-foreground font-normal">{{ TEMPLATE_SNIPPET }}</span></h2>
                 <button
                     type="button"
                     class="text-xs text-muted-foreground hover:text-foreground"
                     data-testid="template-insertion-close"
                     @click="close"
-                >Close</button>
+                >{{ t('Close') }}</button>
             </header>
 
             <div class="flex-1 overflow-y-auto p-3">
                 <div
                     v-if="loading"
                     class="text-xs text-muted-foreground py-6 text-center"
-                >Loading…</div>
+                >{{ t('Loading…') }}</div>
                 <div
                     v-else-if="templates.length === 0"
                     class="text-xs text-muted-foreground py-6 text-center"
-                >No templates uploaded yet. Upload some via the Templates tab first.</div>
+                >{{ t('No templates uploaded yet. Upload some via the Templates tab first.') }}</div>
                 <div
                     v-else
                     class="grid grid-cols-2 sm:grid-cols-3 gap-2"
@@ -137,7 +148,7 @@ onBeforeUnmount(() => {
                             class="font-mono text-xs text-foreground truncate"
                             :title="template.name"
                         >{{ template.name }}</div>
-                        <div class="text-[10px] text-muted-foreground mt-0.5">Click to insert</div>
+                        <div class="text-[10px] text-muted-foreground mt-0.5">{{ t('Click to insert') }}</div>
                     </button>
                 </div>
             </div>

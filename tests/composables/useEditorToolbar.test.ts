@@ -13,15 +13,15 @@ import {
     type ToolbarTool,
 } from '../../src/composables/useEditorToolbar'
 
-function tool(label: string): ToolbarTool {
-    const found = FORMATTING_TOOLS.find((t) => t.label === label)
-    if (found === undefined) throw new Error(`tool ${label} not found`)
+function tool(key: string): ToolbarTool {
+    const found = FORMATTING_TOOLS.find((t) => t.key === key)
+    if (found === undefined) throw new Error(`tool ${key} not found`)
     return found
 }
 
 describe('FORMATTING_TOOLS', () => {
     it('exposes Bold, Italic, Underline, Link (Heading moved to <HeadingMenu>)', () => {
-        expect(FORMATTING_TOOLS.map((t) => t.label)).toEqual([
+        expect(FORMATTING_TOOLS.map((t) => t.key)).toEqual([
             'Bold',
             'Italic',
             'Underline',

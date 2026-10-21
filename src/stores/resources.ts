@@ -18,6 +18,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { ApiError } from '../api/client'
+import { t } from '../i18n'
 import * as fontsApi from '../api/fonts'
 import * as templatesApi from '../api/templates'
 import * as examplesApi from '../api/examples'
@@ -63,7 +64,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             fonts.value = await fontsApi.listFonts(principalId.value ?? undefined)
             hasLoadedOnce = true
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to load fonts.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to load fonts.')
         } finally {
             loading.value = false
         }
@@ -76,7 +77,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             templates.value = await templatesApi.listTemplates(principalId.value ?? undefined)
             hasLoadedOnce = true
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to load templates.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to load templates.')
         } finally {
             loading.value = false
         }
@@ -89,7 +90,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             examples.value = await examplesApi.listExamples(principalId.value ?? undefined)
             hasLoadedOnce = true
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to load examples.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to load examples.')
         } finally {
             loading.value = false
         }
@@ -128,7 +129,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             fonts.value.push(font)
             return font
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to upload font.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to upload font.')
             return null
         } finally {
             uploading.value = false
@@ -143,7 +144,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             templates.value.push(template)
             return template
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to upload template.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to upload template.')
             return null
         } finally {
             uploading.value = false
@@ -158,7 +159,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             examples.value.push(example)
             return example
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to upload example.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to upload example.')
             return null
         } finally {
             uploading.value = false
@@ -180,7 +181,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             }
             return updated
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to update template.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to update template.')
             return null
         } finally {
             uploading.value = false
@@ -202,7 +203,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             }
             return updated
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to update example.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to update example.')
             return null
         } finally {
             uploading.value = false
@@ -243,7 +244,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
                 principalId: principalId.value,
             })
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to render example preview.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to render example preview.')
             return null
         }
     }
@@ -255,7 +256,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             await fontsApi.deleteFont(name, principalId.value ?? undefined)
             fonts.value = fonts.value.filter((f) => f.name !== name)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to delete font.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to delete font.')
             throw e
         } finally {
             uploading.value = false
@@ -269,7 +270,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             await templatesApi.deleteTemplate(name, principalId.value ?? undefined)
             templates.value = templates.value.filter((t) => t.name !== name)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to delete template.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to delete template.')
             throw e
         } finally {
             uploading.value = false
@@ -283,7 +284,7 @@ export const useResourceStore = defineStore('typst-resources', () => {
             await examplesApi.deleteExample(name, principalId.value ?? undefined)
             examples.value = examples.value.filter((e) => e.name !== name)
         } catch (e) {
-            error.value = e instanceof ApiError ? e.message : 'Failed to delete example.'
+            error.value = e instanceof ApiError ? e.message : t('Failed to delete example.')
             throw e
         } finally {
             uploading.value = false

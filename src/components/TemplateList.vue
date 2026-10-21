@@ -7,7 +7,10 @@
  * The kind prop tells the card list which snippet to render
  * (`#import "templates/X.typ"`).
  */
+import { useI18n } from 'vue-i18n'
 import ResourceCardList from './ResourceCardList.vue'
+
+const { t } = useI18n()
 
 defineEmits<{
     (e: 'open-in-editor', payload: { name: string; content: string; filename: string }): void
@@ -17,8 +20,8 @@ defineEmits<{
 <template>
     <ResourceCardList
         kind="template"
-        empty-text="No templates uploaded yet."
-        built-in-heading-text="Built-in"
+        :empty-text="t('No templates uploaded yet.')"
+        :built-in-heading-text="t('Built-in')"
         @open-in-editor="$emit('open-in-editor', $event)"
     />
 </template>

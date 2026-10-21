@@ -190,6 +190,15 @@ describe('useResourceCardList — ensureSource', () => {
 
         expect(c.loadError.value).toBe('server-said-no')
     })
+
+    it('names the kind in the fallback message', async () => {
+        vi.mocked(getExample).mockRejectedValueOnce(new Error('boom'))
+
+        const c = useResourceCardList('example')
+        await c.ensureSource('a.typ')
+
+        expect(c.loadError.value).toBe('failed to read example')
+    })
 })
 
 describe('useResourceCardList — confirmAndDelete', () => {
@@ -400,6 +409,17 @@ describe('useResourceCardList — example render', () => {
         patchStoreRender(async () => {
             throw new Error('boom')
         })
+
+        const c = useResourceCardList('example')
+        await c.renderExample('snippet.typ', '= broken')
+
+        expect(c.renderError.value).toBe('failed to render example')
+    })
+
+    it('renderExample sets a fallback renderError when the store returns null', async () => {
+        // The store swallows the error and returns null, leaving the
+        // message to the composable.
+        patchStoreRender(async () => null)
 
         const c = useResourceCardList('example')
         await c.renderExample('snippet.typ', '= broken')

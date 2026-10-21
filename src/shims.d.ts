@@ -17,6 +17,7 @@
  *   - `router`  — host's Vue Router. We re-declare a local one for
  *                plugin-internal navigation but expose `push` so the
  *                host router is reachable.
+ *   - `locale`  — the host's active interface language, e.g. `'de'`.
  */
 export interface PluginHostContext {
     api: {
@@ -33,6 +34,13 @@ export interface PluginHostContext {
         push: (to: string) => Promise<unknown>
         currentRoute: { value: { path: string; params?: Record<string, unknown>; query?: Record<string, unknown> } }
     } | null
+    /**
+     * The host's active interface language, e.g. `'de'`.
+     *
+     * The plugin builds its own i18n instance from its own catalogue and
+     * initialises it with this.
+     */
+    locale: string
 }
 
 declare global {

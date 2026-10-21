@@ -29,6 +29,11 @@ Five tabs behind the plugin's `/apps/typst` admin slot:
 │   ├── style.css                            # @tailwind components/utilities (no preflight — host owns the reset)
 │   ├── shims.d.ts                           # PluginHostContext contract
 │   ├── types.ts                             # wire shapes for the resource kinds
+│   ├── i18n/
+│   │   └── index.ts                         # the plugin's own vue-i18n instance
+│   ├── locales/
+│   │   ├── en.json                          # generated identity map (npm run i18n:extract)
+│   │   └── de.json                          # the German catalogue
 │   ├── api/
 │   │   ├── client.ts                        # setApi/getApi/ApiError — bridge to host's typed REST client
 │   │   ├── fonts.ts
@@ -107,13 +112,32 @@ Fonts, templates, examples, and images are all plugin-private filesystem files u
 ## Quality gates
 
 ```
-npm run lint      ESLint over src/, tests/, *.ts, *.vue
-npm test          Vitest (~30+ cases, parallel: --parallel --processes=auto)
-npm run build     vue-tsc --noEmit + vite build → frontend/main.js + frontend/style.css
-npm run smoke     Static-analysis guard on the IIFE bundle + stylesheet scope
+npm run lint        ESLint over src/, tests/, *.ts, *.vue
+npm test            Vitest (~30+ cases, parallel: --parallel --processes=auto)
+npm run build       vue-tsc --noEmit + vite build → frontend/main.js + frontend/style.css
+npm run smoke       Static-analysis guard on the IIFE bundle + stylesheet scope
+npm run i18n:check  Catalogue gate — see "Languages" below
 ```
 
-The CI pipeline runs all four in sequence on every push and PR. A size-budget job fails if `main.js + style.css` exceed 200 KB pre-gzip.
+The CI pipeline runs all of them on every push and PR. A size-budget job fails if `main.js + style.css` exceed 280 KB pre-gzip.
+
+## Languages
+
+The panel ships its own `vue-i18n` instance (`src/i18n/index.ts`) built from its own catalogue — the host does not publish its instance. The locale comes from the host through `PluginHostContext.locale`; the dev sandbox reads it from `?locale=de`.
+
+```
+src/locales/en.json   generated identity map — every key maps to itself
+src/locales/de.json   the German catalogue
+```
+
+**The catalogue key is the English source string** — `t('Save & Render')`, not a slug. That means a copy edit orphans the German entry, which is what the extractor's orphan rule catches.
+
+```
+npm run i18n:extract   regenerate en.json from the source and report what is untranslated
+npm run i18n:check     the CI gate: en.json drift, a locale's key set, untranslated values, and copy outside t()
+```
+
+`npm run i18n:check` fails on an operator-facing string that is not wrapped in `t()`. The strings that stay unwrapped are the ones that read the same in every language — `Typst`, `Principal`, `PPI`, `URL`, `Esc` — plus the technical identifiers (file names, URL paths, Typst snippets) that are held in script constants.
 
 ## Depends on
 

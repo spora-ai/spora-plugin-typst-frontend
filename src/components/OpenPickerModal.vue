@@ -31,8 +31,11 @@
  * the chip row's selection.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { PlaygroundSourceKind, PlaygroundSourceSummary } from '../types'
 import type { SourcesKindFilter } from '../stores/sources'
+
+const { t } = useI18n()
 
 const props = defineProps<{
     open: boolean
@@ -66,12 +69,12 @@ const dialogRef = ref<HTMLDialogElement | null>(null)
  * while the aria-label spells the kind out for screen readers
  * ("Saved playground files").
  */
-const kindChips: { value: SourcesKindFilter; label: string; ariaLabel: string }[] = [
-    { value: 'all', label: 'All', ariaLabel: 'All playground files' },
-    { value: 'saved', label: 'Saved', ariaLabel: 'Saved playground files' },
-    { value: 'generated', label: 'Generated', ariaLabel: 'LLM-generated playground files' },
-    { value: 'uploaded', label: 'Uploaded', ariaLabel: 'Operator-uploaded playground files' },
-]
+const kindChips = computed<{ value: SourcesKindFilter; label: string; ariaLabel: string }[]>(() => [
+    { value: 'all', label: t('All'), ariaLabel: t('All playground files') },
+    { value: 'saved', label: t('Saved'), ariaLabel: t('Saved playground files') },
+    { value: 'generated', label: t('Generated'), ariaLabel: t('LLM-generated playground files') },
+    { value: 'uploaded', label: t('Uploaded'), ariaLabel: t('Operator-uploaded playground files') },
+])
 
 const filtered = computed<PlaygroundSourceSummary[]>(() => {
     const q = search.value.trim().toLowerCase()
@@ -107,12 +110,12 @@ const activeRowId = computed<string | null>(() => {
  */
 const emptyStateMessage = computed<string>(() => {
     switch (props.kind) {
-        case 'saved':     return 'No saved playground files yet. Render once to create one.'
-        case 'generated': return 'No LLM-generated .typ files yet.'
-        case 'uploaded':  return 'No uploaded .typ files yet.'
-        case 'other':     return 'No .typ files in this pool.'
+        case 'saved':     return t('No saved playground files yet. Render once to create one.')
+        case 'generated': return t('No LLM-generated .typ files yet.')
+        case 'uploaded':  return t('No uploaded .typ files yet.')
+        case 'other':     return t('No .typ files in this pool.')
         case 'all':
-        default:          return 'No .typ files owned by this principal yet.'
+        default:          return t('No .typ files owned by this principal yet.')
     }
 })
 
@@ -329,7 +332,7 @@ onBeforeUnmount(() => {
     ref="dialogRef"
     class="fixed inset-0 z-50 m-0 max-w-none max-h-none w-full h-full p-4 bg-transparent backdrop:bg-black/40 open:flex items-center justify-center"
     aria-modal="true"
-    aria-label="Open playground file"
+    :aria-label="t('Open playground file')"
     data-testid="open-picker-dialog"
     @click="onDialogClick"
     @keydown="onKey"
@@ -346,8 +349,8 @@ onBeforeUnmount(() => {
           ref="searchInputRef"
           v-model="search"
           type="text"
-          placeholder="Search files by name… (press / to focus)"
-          aria-label="Search playground files"
+          :placeholder="t('Search files by name… (press / to focus)')"
+          :aria-label="t('Search playground files')"
           class="flex-1 min-w-0 px-3 py-1.5 rounded-md border border-input bg-background text-foreground text-sm focus:border-ring focus:ring-1 focus:ring-ring outline-none"
           spellcheck="false"
           autocomplete="off"
@@ -355,7 +358,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-          title="Close (Esc)"
+          :title="t('Close (Esc)')"
           @click="close"
         >
           Esc
@@ -366,7 +369,7 @@ onBeforeUnmount(() => {
         v-if="sources.length > 0"
         class="flex items-center gap-1.5 px-3 py-1.5 border-b border-border overflow-x-auto"
         role="tablist"
-        aria-label="Filter playground files by pool"
+        :aria-label="t('Filter playground files by pool')"
       >
         <button
           v-for="chip in kindChips"
@@ -404,21 +407,21 @@ onBeforeUnmount(() => {
           class="text-left hover:text-foreground"
           @click="setSort('filename')"
         >
-          File {{ sortArrow('filename') }}
+          {{ t('File') }} {{ sortArrow('filename') }}
         </button>
         <button
           type="button"
           class="text-right hover:text-foreground"
           @click="setSort('byte_size')"
         >
-          Size {{ sortArrow('byte_size') }}
+          {{ t('Size') }} {{ sortArrow('byte_size') }}
         </button>
         <button
           type="button"
           class="text-right hover:text-foreground"
           @click="setSort('updated_at')"
         >
-          Updated {{ sortArrow('updated_at') }}
+          {{ t('Updated') }} {{ sortArrow('updated_at') }}
         </button>
       </div>
 
@@ -430,7 +433,7 @@ onBeforeUnmount(() => {
           v-if="loading"
           class="px-3 py-6 text-center text-sm text-muted-foreground"
         >
-          Loading…
+          {{ t('Loading…') }}
         </div>
         <div
           v-else-if="sources.length === 0"
@@ -445,7 +448,7 @@ onBeforeUnmount(() => {
           class="px-3 py-6 text-center text-sm text-muted-foreground"
         >
           <template v-if="search !== ''">
-            No files match “{{ search }}”.
+            {{ t('No files match “{search}”.', { search }) }}
           </template>
           <template v-else>
             {{ emptyStateMessage }}
@@ -478,20 +481,20 @@ onBeforeUnmount(() => {
       </div>
 
       <footer class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-[10px] text-muted-foreground">
-        <span>{{ filtered.length }} of {{ sources.length }} files</span>
+        <span>{{ t('{count} of {total} files', { count: filtered.length, total: sources.length }) }}</span>
         <span class="flex items-center gap-4">
           <span class="inline-flex items-center gap-1.5">
             <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">/</kbd>
-            <span>search</span>
+            <span>{{ t('search') }}</span>
           </span>
           <span class="inline-flex items-center gap-1.5">
             <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▲</kbd>
             <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">▼</kbd>
-            <span>move</span>
+            <span>{{ t('move') }}</span>
           </span>
           <span class="inline-flex items-center gap-1.5">
             <kbd class="font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-foreground">↵</kbd>
-            <span>open</span>
+            <span>{{ t('open') }}</span>
           </span>
         </span>
       </footer>

@@ -13,6 +13,31 @@ import vue from '@vitejs/plugin-vue'
  */
 export default defineConfig({
     plugins: [vue()],
+    define: {
+        // The plugin uses vue-i18n's Composition API only, so the
+        // Legacy API does not need to ship. `__INTLIFY_DROP_MESSAGE_COMPILER__`
+        // is deliberately NOT set: the message compiler is what turns
+        // `{name}` into a parameter lookup, and dropping it would make
+        // every interpolated message render its own source.
+        __VUE_I18N_FULL_INSTALL__: 'false',
+        __VUE_I18N_LEGACY_API__: 'false',
+        __INTLIFY_PROD_DEVTOOLS__: 'false',
+
+        // `process.env.NODE_ENV` has to be replaced at build time.
+        //
+        // Vite replaces it for an *app* build, but not for a **library** build —
+        // and this is a library build (`build.lib.formats: ['iife']`). So the
+        // `process.env.NODE_ENV` inside vue-i18n survives into the bundle, and
+        // `process` does not exist in a browser: the panel dies on load with
+        // "process is not defined" before it renders a single string.
+        //
+        // vue-i18n only uses it to decide whether to *warn* — every use is a
+        // `!== 'production'` guard — so replacing it with the real build mode
+        // removes the development warnings and changes nothing else. The host
+        // SPA gets the same replacement for free, which is why the bug only
+        // shows up in a plugin bundle.
+        'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
+    },
     // Must match the host's SPORA_PLUGIN_DEV_PORTS=typst:5176 for dev-proxy.
     base: '/plugins/typst/',
     build: {
@@ -52,6 +77,9 @@ export default defineConfig({
         globals: true,
         environment: 'happy-dom',
         include: ['tests/**/*.{test,spec}.{js,ts}'],
+        // Installs the i18n instance on every mounted component — the
+        // components translate their copy through `t()`.
+        setupFiles: ['tests/setup.ts'],
         reporters: process.env.CI
             ? [
                 ['default'],
@@ -70,7 +98,7 @@ export default defineConfig({
             reportsDirectory: './coverage',
             // Mirrors sonar.coverage.exclusions — excludes Vue SFCs / type-only files
             // so the coverage number reflects exercised code, not an inflated denominator.
-            include: ['src/api/**/*.ts', 'src/stores/**/*.ts', 'src/composables/**/*.ts'],
+            include: ['src/api/**/*.ts', 'src/stores/**/*.ts', 'src/composables/**/*.ts', 'src/i18n/**/*.ts'],
             exclude: ['src/main.ts', 'src/dev-main.ts', 'src/shims.d.ts', 'src/types.ts', 'src/**/*.{vue,css}'],
         },
     },
