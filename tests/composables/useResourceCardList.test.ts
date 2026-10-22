@@ -330,10 +330,9 @@ describe('useResourceCardList — onMounted auto-load', () => {
 })
 
 describe('useResourceCardList — example render', () => {
-    // The store's `renderExample` bridge is added in a separate
-    // commit; the tests patch it onto the store directly so the
-    // composable's cast-based access resolves to a controlled
-    // stub. The composable decodes the base64 payload into a Blob
+    // The store's `renderExample` bridge is stubbed onto the store
+    // directly so the composable resolves to a controlled response.
+    // The composable decodes the base64 payload into a Blob
     // and stores the resulting objectURL keyed by name.
 
     const PNG_1X1_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP8//8/AwAI/AL+Sj0G6AAAAABJRU5ErkJggg=='

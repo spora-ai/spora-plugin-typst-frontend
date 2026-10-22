@@ -1,11 +1,7 @@
 <script setup lang="ts">
 /**
- * TypstPage — single-page admin UI with five tabs:
- *   - Fonts      (uploader + list of per-principal fonts)
- *   - Templates  (uploader + list of per-principal typ templates)
- *   - Examples   (uploader + list of per-principal typ example patterns)
- *   - Images     (uploader + grid of per-principal images)
- *   - Editor     (typ source editor + format selector + result panel)
+ * TypstPage — the plugin's tabbed UI (Fonts, Templates, Examples,
+ * Images, Editor).
  *
  * The Editor is the renamed "Playground" — the label change is
  * UI-only per the project's "UI label rename only" rule. The
@@ -18,11 +14,6 @@
  *   `{ name, content, filename }`. We route it through
  *   `useTabsStore().goToEditor(prefill)` and the Editor consumes
  *   the prefill on its next mount via the tabs store.
- *
- * Edit is in-place inside `<ResourceOverlay>` — the overlay
- * swaps its readOnly SourceEditor for an editable one when the
- * operator clicks Edit, then PUTs via the resource store. The
- * parent no longer needs an edit-modal layer.
  *
  * Principal scope:
  *   A single chip row between the tab nav and the tab content

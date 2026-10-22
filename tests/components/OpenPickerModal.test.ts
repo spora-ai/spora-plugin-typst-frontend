@@ -278,7 +278,7 @@ describe('OpenPickerModal — empty state', () => {
 })
 
 describe('OpenPickerModal — positioning (regression: Tailwind scope)', () => {
-    // The host SPA's `PluginAppPage` wraps the plugin mount in
+    // The plugin's own `App.vue` wraps its subtree in
     // `<div id="spora-plugin-typst">`; every Tailwind utility is generated
     // beneath that ID (`tailwind.config.ts → important: '#spora-plugin-typst'`).
     // A teleported subtree would sit outside the scoping ancestor and

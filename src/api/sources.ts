@@ -9,11 +9,10 @@
  *   PUT    /typst/sources/{id}[?principal_id=N]    body { content } → { data: { id, filename, byte_size, updated_at } }
  *   DELETE /typst/sources/{id}[?principal_id=N]    → 204
  *
- * The compile endpoint (`POST /api/v1/typst/compile`) materialises
- * the parent row as a side-effect; this client is the user-facing
- * counterpart that lets the operator UI list / open / create /
- * edit / delete those rows without going through the media archive
- * plugin.
+ * The compile endpoint (`POST /api/v1/typst/compile`) materialises the
+ * parent row as a side-effect; this client is the user-facing counterpart
+ * that lets the operator UI list / open / create / edit / delete those
+ * rows directly.
  *
  * The `?principal_id=N` query param mirrors the other resource
  * controllers (fonts/templates/examples/images) so the chip row in

@@ -6,8 +6,8 @@
  * Three resource kinds share the same UI shape (upload / list /
  * delete), so we keep them in a single store to avoid duplicating
  * the loading-flag pattern across three stores. Images live in
- * `stores/images.ts` because they have a fundamentally different wire
- * shape (filesystem-backed with raw bytes vs. UTF-8 source text).
+ * `stores/images.ts` because they carry raw bytes rather than UTF-8
+ * source text.
  *
  * `acceptHMRUpdate` is wired at the bottom so a store rename (e.g.
  * `examples` → `templates`) triggers a full module reload instead of
@@ -30,8 +30,7 @@ import type { FontResource, TemplateResource, ExampleResource } from '../types'
  * Inline render result for the example-card "render preview"
  * action. Aliased from the API client's wire type so the shape
  * stays in sync — a field added on one side now shows up on the
- * other automatically, and the composable's cast (which used to
- * hide the type mismatch between store + client) goes away.
+ * other automatically.
  *
  * Kept as a separate export name so existing imports keep working
  * and the store doesn't leak the `preview` API client's path into

@@ -13,7 +13,7 @@
  *
  * `content` is the raw bytes when the file is SVG / UTF-8 (text MIME)
  * and base64-encoded for binary uploads. The controller auto-detects
- * via the same heuristic as the earlier TypstFontController.
+ * via the same heuristic the font controller uses.
  *
  * `principalId` mirrors the chip-row selector on `?principal_id=N`.
  * All write/read methods accept it so uploads land in the scope

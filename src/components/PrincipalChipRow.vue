@@ -13,8 +13,7 @@
  * scoped for tier-1 resources.
  *
  * Loading state: skeletons until the principals store resolves
- * `/principals/me`. Error state: a single chip showing the error
- * message — clicking it retries the load.
+ * `/principals/me`. Error state: the store's message next to the row.
  */
 import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'

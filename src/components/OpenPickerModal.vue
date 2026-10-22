@@ -5,11 +5,9 @@
  *
  * Replaces the inline dropdown that ships with the basic Open button.
  * The dropdown works for ~10 files; this modal scales to hundreds
- * because it has a search input, a sort control, a kind chip row,
- * and a virtualized list (`<List>` from `vue-virtual-scroller` —
- * but to keep the dep footprint small, we do plain CSS overflow with
- * a max-height instead; hundreds of rows scroll fine without
- * virtualization because each row is ~28px tall).
+ * because it has a search input, a sort control and a kind chip row.
+ * The list is plain CSS overflow rather than a virtual scroller: each
+ * row is ~28px tall, so hundreds of rows scroll fine without it.
  *
  * The chip row scopes the listing to one of the three `.typ` pools
  * (saved / generated / uploaded) plus an "All" chip that returns
@@ -244,10 +242,9 @@ function formatUpdated(s: string | null): string {
 }
 
 /**
- * Count badge content for a kind chip. `all` is the union of the
- * three pools; the helper sums them on demand so the badge stays
- * consistent even if the backend ever adds another pool without
- * updating the chip row.
+ * Count badge content for a kind chip. `all` sums the three pools the
+ * chip row offers; rows the backend labels `other` are listed under
+ * `all` but not counted in its badge.
  */
 function kindBadgeValue(value: SourcesKindFilter): number {
     if (value === 'all') {

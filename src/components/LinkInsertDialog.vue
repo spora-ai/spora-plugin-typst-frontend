@@ -12,16 +12,14 @@
  *
  * On confirm:
  *   Emits `confirm` with `{ url, label }` so the toolbar can
- *   build the snippet `#link("<url>")[<label>]` and call
- *   `insertAtCursor` on the editor.
+ *   build the snippet `#link("<url>")[<label>]` and insert it
+ *   through the editor's `insertAtCaret`.
  *
- * On cancel:
- *   Emits `cancel` (or just close).
- *
- * Native `<dialog>` so the toolbar's other dialog (the editor
- * overlay isn't one, but the picker modals are) keeps keyboard
- * handling consistent — Esc / backdrop click work without
- * custom handlers.
+ * Native `<dialog>` for the UA-managed focus trap + ::backdrop.
+ * Esc and backdrop clicks are handled explicitly (the document
+ * keydown listener and the click check on the dialog element),
+ * because the UA's own Esc handling is not enough in every
+ * environment the panel runs in.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'

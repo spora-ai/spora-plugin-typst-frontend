@@ -1,13 +1,7 @@
 <script setup lang="ts">
 /**
- * TemplateInsertionModal — modal for picking a template to
+ * TemplateInsertionPicker — modal for picking a template to
  * `#import` into the editor's source.
- *
- * Replaces the previous inline panel under the editor (which
- * pushed other affordances off-screen as the source grew). The
- * toolbar's "Template" button toggles this modal; on select the
- * snippet lands at the caret via the parent's pickTemplate
- * handler.
  *
  * Mirrors the image picker's structure (grid of cards, click to
  * insert) so the operator's mental model stays uniform: pick a
@@ -20,8 +14,9 @@
  * picker ignorant of that path.
  *
  * Native `<dialog>` for the UA-managed focus trap + ::backdrop.
- * `showModal()` is called from onMounted (the parent mounts
- * with `open=true` so the watcher-on-change path doesn't fire).
+ * The parent keeps this mounted and flips `open`, so `showModal()`
+ * is called from the watcher on `open`; the `onMounted` branch only
+ * covers a picker that is already open when it mounts.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'

@@ -2,11 +2,9 @@
 /**
  * Pinia store for the per-principal image library.
  *
- * The plugin's images are now filesystem-backed (no `media_assets`
- * rows); the wire surface is `{ name, mime, size, modified_at, url }`
- * and the URL is `/api/v1/typst/images/{name}`. Delete is by name,
- * not by id. The store is otherwise identical in shape to the
- * pre-refactor `media_assets` version.
+ * The plugin's images are filesystem-backed (no `media_assets` rows);
+ * the wire surface is `{ name, mime, size, modified_at, url }` and the
+ * URL is `/api/v1/typst/images/{name}`. Delete is by name, not by id.
  */
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'

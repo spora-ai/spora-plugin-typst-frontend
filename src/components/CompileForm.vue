@@ -5,15 +5,14 @@
  * so iterating on a document doesn't fill the media archive with
  * parent rows.
  *
- * Action buttons (footer):
+ * The two footer buttons differ in what they persist:
  *   - **Preview** — POST /preview only. Ephemeral, no DB writes.
  *     Use this when iterating without committing.
  *   - **Save & Render** — POST /sources to persist the buffer
  *     first, then POST /preview against the same source. One
- *     click = save + see result. The Save Source button is gone
- *     — Save & Render covers the "save then look" path; if the
- *     operator just wants to save, the Open picker dropdown
- *     surfaces every saved source for re-opening.
+ *     click = save + see result. There is no separate "save only"
+ *     button; the Open picker surfaces every saved source for
+ *     re-opening.
  *
  * Backend path: `POST /api/v1/typst/preview` (TypstPreviewController
  * in the plugin) — same compile + render pipeline the agent's
@@ -21,29 +20,11 @@
  * synchronous operator-facing render. The preview returns base64
  * bytes inline; we decode them to a Blob URL for the result panel.
  *
- * Render targets:
- *   - PDF  → <iframe> of the Blob URL
- *   - PNG  → <img> of the Blob URL (with PPI selector — only the
- *            PNG format has raster density)
- *   - SVG  → <img> of the Blob URL
- *
  * The Editor is source-only — Save persists the source as a
  * `media_assets` row tagged `tool_name='typst.playground'`, but it
  * never creates a derivative. The LLM tool's `typst_compile` still
  * uses `/compile` for production renders that need a persistent
  * output row.
- *
- * Toolbar (above editor):
- *   - **Formatting tools** — Heading, Bold, Italic, Underline,
- *     Link. Lives in `<EditorToolbar>` (a separate component);
- *     each tool reads the current selection and either wraps it
- *     or inserts a placeholder. See `useEditorToolbar.ts` for the
- *     per-tool dispatch logic.
- *   - **Insert Template / Insert Image** (trailing slot of the
- *     toolbar) — these trigger `<TemplateInsertionPicker>` and
- *     `<ImageInsertModal>` respectively. Both are modals now
- *     (the previous inline panels pushed other affordances off
- *     screen as the source grew).
  *
  * Cross-tab prefill:
  *   The Examples tab's "Open Copy in Editor" button (and the same
@@ -136,8 +117,9 @@ const PREVIEW_ENDPOINT = 'POST /api/v1/typst/preview'
 /**
  * The raster-density options the operator can pick.
  *
- * The wire-level numbers live in `constants/ppi.ts`; the labels are
- * copy, so they are resolved here where the panel's language is known.
+ * The values mirror `constants/ppi.ts` / the backend's
+ * `SUPPORTED_PPI`; the labels are copy, so they are resolved here where
+ * the panel's language is known.
  */
 const PPI_OPTIONS = [
     { value: 72, label: t('72 PPI — web / thumbnail') },

@@ -1,11 +1,16 @@
 /**
  * The stores' translated failure messages.
  *
- * A store reports two kinds of failure. The host's typed `ApiError`
- * carries a message that is already operator-facing, and the store
- * surfaces it verbatim. Anything else — a transport error, a
+ * A store reports two kinds of failure. A failure that is an
+ * `ApiError` carries a message that is already operator-facing, and
+ * the store surfaces it verbatim. Anything else — a transport error, a
  * malformed envelope — falls back to the store's own sentence, and
  * that sentence is the one a German operator reads.
+ *
+ * `ApiError` is the plugin's own class (see `src/api/client.ts`): the
+ * host's client throws the host's class, so a host call always takes
+ * the catalogue's sentence. The typed branch is what `fetchText` — the
+ * template / example source read — produces.
  *
  * The fallback is asserted here because it is the only place in the
  * store where the message comes from the catalogue rather than from
@@ -26,11 +31,11 @@ import { createPinia, setActivePinia } from 'pinia'
  * The failure a transport error carries.
  *
  * Not an `ApiError`, so it is what takes the catalogue's fallback
- * message rather than the host's own.
+ * message rather than the typed one.
  */
 const TRANSPORT_FAILURE = 'transport failed'
 
-/** The failure the host's typed client carries. */
+/** The failure an `ApiError` carries. */
 const WIRE_FAILURE = 'the server said no'
 
 /**
@@ -50,10 +55,10 @@ function failingApi(reason: unknown): PluginHostContext['api'] {
 /**
  * Run a store operation against both kinds of failure.
  *
- * The catch block branches on `e instanceof ApiError`: the host's
- * typed failure keeps its own message, anything else falls back to
- * the catalogue's sentence. Both branches are reachable in
- * production and both have to run for the branch to be covered.
+ * The catch block branches on `e instanceof ApiError`: a typed
+ * failure keeps its own message, anything else falls back to the
+ * catalogue's sentence. Both branches have to run for the branch to
+ * be covered.
  */
 async function expectBothMessages(
     store: { error: string | null },
