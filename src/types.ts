@@ -1,7 +1,7 @@
 /**
  * Wire shape for Typst plugin resources.
  *
- * Three kinds, all filesystem-backed. Templates and Examples are
+ * Four kinds, all filesystem-backed. Templates and Examples are
  * essentially the same wire shape (UTF-8 source bytes, basename
  * addressable) — they're separated on the wire only so the admin UI
  * can give them distinct tabs.
@@ -32,8 +32,7 @@ export interface ExampleResource {
 }
 
 /**
- * Image library entry. Replaces the earlier `media_assets`-backed
- * shape — images are now plain files under
+ * Image library entry. Images are plain files under
  * `<storage>/typst/images/<principal>/<name>`, served via
  * `/api/v1/typst/images/{name}`. The `url` field is the canonical
  * reference the LLM pastes into `#image("…")`.
@@ -66,10 +65,10 @@ export interface UploadedImage {
 export type ResourceKind = 'font' | 'template' | 'example' | 'image'
 
 /**
- * Result of the playground compile call. Mirrors the controller's
- * response envelope — the playground calls `POST /api/v1/typst/compile`
- * and gets a media-derivative row back, with the canonical
- * `/api/v1/assets/<uuid>.<ext>` URL the chat UI knows how to embed.
+ * Result of the compile call. Mirrors the controller's response
+ * envelope — the compile endpoint gets a media-derivative row back,
+ * with the canonical `/api/v1/assets/<uuid>.<ext>` URL that the
+ * backend's `MediaEmbed` turns into a chat file card.
  *
  * `source_id` / `source_name` are the parent row's id + filename
  * so the editor can keep the open file's identity across compiles

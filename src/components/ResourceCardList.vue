@@ -63,9 +63,8 @@ export interface SavedEventPayload {
  *     parent routes through `useTabsStore().goToEditor()` so
  *     the Editor tab pre-fills with a copy (the original is
  *     untouched).
- *   - `render-example` — Render clicked (examples only). Kept
- *     as a no-op telemetry signal — the parent doesn't need to
- *     act.
+ *   - `render-example` — Render clicked (examples only). The
+ *     overlay owns the render, so no parent binds this today.
  *
  * Edit is in-place inside the overlay (no second modal). On
  * successful save the overlay emits `saved` and this component

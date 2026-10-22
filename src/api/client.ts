@@ -1,32 +1,25 @@
 /**
  * Plugin-local bridge to the host's typed REST client.
  *
- * Mirrors `spora-plugin-memories-frontend/src/api/client.ts`. The
- * bundle is mounted by `spora-frontend`'s `apps/registry.ts` which
- * passes a `PluginHostContext` to `mount()`. The host's API client
- * knows about CSRF tokens, the `/api/v1` base, and the
+ * The host's `apps/registry.ts` passes a `PluginHostContext` to
+ * `mount()`, and that context carries the host's API client. The host's
+ * client knows about CSRF tokens, the `/api/v1` base and the
  * `{ data: T }` envelope unwrap — we don't recreate any of that here,
  * we just hand the passed-in instance back to the rest of the plugin.
  *
  * `setApi()` is called once per `mount()`; `getApi()` is then used by
- * `api/{fonts,examples,images,compile}.ts` and any plugin-local fetch
- * helper. Tests can either `vi.mock()` this module directly or
- * re-`setApi()` with a stub.
- *
- * `ApiError` mirrors the host's `spora-frontend/src/api/client.ts →
- * ApiError` shape: `{ message, code, status }`. Plugin code only
- * reads `message` (for surfacing errors in the store's loading flags).
+ * every API module and by the plugin-local fetch helper. Tests can
+ * either `vi.mock()` this module directly or re-`setApi()` with a stub.
  *
  * `fetchText` is a plugin-local helper for the .typ source endpoints
- * (Templates, Examples, Fonts preview) that respond with
- * `text/plain` — the host's `api.get<T>()` always `JSON.parse()`s
- * the body and synthesises an `INVALID_JSON` error envelope on
- * non-JSON payloads, which would mask a perfectly fine text
- * response. The helper uses `globalThis.fetch` directly because:
- *   - GET requests don't need a CSRF token (state-changing methods
- *     only — see the host's `STATE_CHANGING_METHODS` set).
- *   - Session cookies are sent via `credentials: 'include'`, the
- *     same flag the host's client uses.
+ * (Templates, Examples) that respond with `text/plain` — the host's
+ * `api.get<T>()` always `JSON.parse()`s the body and synthesises an
+ * `INVALID_JSON` error envelope on non-JSON payloads, which would mask
+ * a perfectly fine text response. The helper uses `globalThis.fetch`
+ * directly because:
+ *   - GET requests don't need a CSRF token (state-changing methods only).
+ *   - Session cookies are sent via `credentials: 'include'`, the same
+ *     flag the host's client uses.
  *   - The response is read with `.text()` rather than the host's
  *     `.json()`, which avoids the synthetic-error trap.
  */
@@ -45,6 +38,16 @@ export function getApi(): PluginHostContext['api'] {
     return _api
 }
 
+/**
+ * The plugin's own error type — thrown by `fetchText` and matched by the
+ * stores' `e instanceof ApiError` branch.
+ *
+ * It is a different class from the host's `ApiError`: the host's client
+ * throws its own, so the `instanceof` check only ever matches a failure
+ * that came through `fetchText` (reading a template's or an example's
+ * source). Everything the host's client throws takes the store's own
+ * fallback sentence instead.
+ */
 export class ApiError extends Error {
     constructor(
         message: string,
@@ -96,10 +99,8 @@ export async function fetchText(path: string): Promise<string> {
 /**
  * Append `?principal_id=N` to a path when the caller passed one.
  *
- * Centralised so the four resource API clients stay in lockstep on
- * the principal-scoping wire shape (and so the host's pre-existing
- * `sources.ts` client keeps working with its own copy — see the
- * comment there).
+ * Centralised so every API client stays in lockstep on the
+ * principal-scoping wire shape.
  */
 export function withPrincipal(path: string, principalId: number | null | undefined): string {
     if (principalId === undefined || principalId === null) {

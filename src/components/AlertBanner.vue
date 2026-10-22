@@ -2,16 +2,15 @@
 /**
  * Inline error / status banner.
  *
- * Mirrors `spora-plugin-memories-frontend/src/components/AlertBanner.vue` —
- * same prop names, same v-if contract, same Tailwind utility palette
- * (the host SPA's tokens, so a plugin component styled like this
- * blends with the surrounding chrome without per-component theming).
+ * The plugin is an isolated bundle and cannot import the host's UI
+ * library, so it ships its own banner — but styled with the host's
+ * Tailwind tokens (`bg-destructive`, `bg-secondary`, `border-border`)
+ * so it blends with the surrounding chrome without per-component
+ * theming.
  *
- * The store passes its `error` ref through verbatim — the banner is
- * "dumb" and lets the page decide which `info` vs `error` slot to
- * render. Two variants only: `error` (red, dismissable) and `info`
- * (blue, informational — used by the Playground's compile-endpoint
- * degraded-mode notice).
+ * The banner is "dumb": it renders whatever message it is handed and
+ * reports the dismiss click. The page decides which message wins
+ * across the four stores.
  */
 import { useI18n } from 'vue-i18n'
 

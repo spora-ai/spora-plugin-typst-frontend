@@ -1,22 +1,9 @@
 <script setup lang="ts">
 /**
  * ResourceOverlay — single-action surface for a Templates or
- * Examples card.
- *
- * Replaces the inline `<details>` View-source expansion + Edit
- * button + Render button + render-result panel that used to
- * live on each card. One click on the card title opens this
- * modal; every action for that resource (View source, Edit,
- * Open Copy in Editor, Render, Delete) sits inside.
- *
- * Two modes:
- *   - Viewing (default): SourceEditor in readOnly mode shows the
- *     current source. Footer carries the action bar (Copy as
- *     import, Render, Edit, Open Copy in Editor, Delete).
- *   - Editing: triggered by the Edit button. SourceEditor swaps
- *     to v-model (editable), footer swaps to Cancel + Save, and
- *     the header title flips to "Editing template: …" so the
- *     operator can see they're in an unsaved-state.
+ * Examples card. One click on the card title opens this modal; every
+ * action for that resource (View source, Edit, Open Copy in Editor,
+ * Render, Delete) sits inside.
  *
  * The edit is in-place — clicking Edit does NOT open a second
  * modal. Keeping a single `<dialog>` instance means one source

@@ -46,11 +46,11 @@ export async function compileTypst(opts: {
 }
 
 /**
- * Snippet emitted by the "Copy as `#image()`" button on the
- * Playground's PDF result panel. PNG derivatives are the natural
- * target for `#image()`; SVG would call for `#image("…svg")` with
- * the same body but a different MIME, and PDF has no `#image()`
- * equivalent at all (the playground renders PDFs in an iframe).
+ * The `#image()` snippet for a compiled asset.
+ *
+ * PNG derivatives are the natural target for `#image()`; SVG would
+ * call for `#image("…svg")` with the same body but a different MIME,
+ * and PDF has no `#image()` equivalent at all.
  *
  * `width: 80%` mirrors the playground's own default sizing so the
  * pasted snippet drops in without further editing.

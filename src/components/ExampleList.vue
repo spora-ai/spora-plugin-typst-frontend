@@ -3,10 +3,8 @@
  * Examples tab — wraps the shared ResourceCardList and forwards
  * the `open-in-editor` event to the parent (TypstPage) so it can
  * route through `useTabsStore().goToEditor()`. Edit is handled
- * in-place inside the overlay. The overlay also owns the
- * example render thumbnail, so the parent no longer needs to
- * coordinate `render-example` either — kept as a no-op
- * telemetry signal.
+ * in-place inside the overlay, which also owns the example render
+ * thumbnail.
  */
 import { useI18n } from 'vue-i18n'
 import ResourceCardList from './ResourceCardList.vue'

@@ -33,15 +33,11 @@ export const useSourcesStore = defineStore('typst-sources', () => {
     const loading = ref(false)
     const saving = ref(false)
     const error = ref<string | null>(null)
-    // The principal the chip row is currently scoped to. Setter is
-    // public so the page can wire `usePrincipalsStore.selectedPrincipalId`
-    // into it. Mirrors the same shape as the resource and image
-    // stores so the chip row's wiring is symmetric.
+    // The principal the chip row is currently scoped to. Public setter so
+    // the page can wire the chip row's selection into it.
     const principalId = ref<number | null>(null)
-    // The kind chip the picker is currently scoped to. The store
-    // exposes the active kind plus the per-kind counts so the chip
-    // row renders count badges without re-deriving on every click.
-    // `all` (the default) is the union of the three pools.
+    // The kind chip the picker is currently scoped to. `all` (the default)
+    // is the union of the three pools.
     const kind = ref<SourcesKindFilter>('all')
     // Per-kind counts derived from the most recent unfiltered fetch.
     // Cached so chip switches don't trigger a per-kind network round
@@ -85,8 +81,7 @@ export const useSourcesStore = defineStore('typst-sources', () => {
     /**
      * Walk the union fetch and tally each row by its backend-derived
      * `kind` so the chip row can show "Saved (3) · Generated (1) ·
-     * Uploaded (0)" without re-deriving on every render. Kept as a
-     * pure function so a future test can exercise it directly.
+     * Uploaded (0)" without re-deriving on every render.
      */
     function recomputeKindCounts(rows: PlaygroundSourceSummary[]): void {
         const next: Record<PlaygroundSourceKind, number> = {
@@ -210,11 +205,9 @@ export const useSourcesStore = defineStore('typst-sources', () => {
     }
 
     // Re-fetch when the principal chip changes (mirrors the resource
-    // and image stores). The watcher only kicks off a reload when
-    // the listing is already populated so the initial mount of the
-    // Clear stale rows synchronously so the playground picker
-    // doesn't render names from the previous principal while the
-    // reload is in flight. `hasLoadedOnce` skips the initial
+    // and image stores). Stale rows are cleared synchronously so the
+    // playground picker doesn't render names from the previous principal
+    // while the reload is in flight. `hasLoadedOnce` skips the initial
     // chip-row set so onMounted's loadSources() isn't double-fired;
     // we can't use `length === 0` as the gate (visiting an empty
     // principal would silence subsequent reloads back to a

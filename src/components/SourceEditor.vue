@@ -3,10 +3,8 @@
  * Reusable Typst source editor — textarea + syntax-highlighted
  * overlay, scroll-locked.
  *
- * Extracted from the inlined markup in `CompileForm.vue` so the
- * Templates and Examples edit modals (follow-up commits) can use
- * the same editor surface. Behaviour matches the previous inlined
- * version exactly.
+ * Shared by the editor tab and the Templates / Examples overlay, so
+ * both get the same highlight surface.
  *
  * Architecture: a transparent `<textarea>` stacked on top of a
  * `<pre>` containing hljs-highlighted HTML. Both share the same
@@ -33,9 +31,8 @@
  *     insertion so clicking Bold / Italic / Heading doesn't
  *     yank the textarea's scroll position back to the caret.
  *   - `textarea` — the raw `<textarea>` element, for cursor-aware
- *     insertion (`CompileForm.insertAtCursor` after an image is
- *     picked from the picker).
- *   - `insertAtCursor(text)` — splice `text` into the buffer at
+ *     insertion.
+ *   - `insertAtCaret(text)` — splice `text` into the buffer at
  *     the current caret (or replace the current selection), then
  *     re-focus and position the caret just after the insertion.
  *     Used by the formatting toolbar and the image / template
@@ -43,8 +40,7 @@
  *   - `insertAtLineStart(text)` — splice `text` at the start of
  *     the caret's current line. The caret position inside the
  *     line is preserved (the inserted text shifts the caret
- *     right by `text.length`). Used by the Heading tool, which
- *     prefixes the active line with `= `.
+ *     right by `text.length`).
  *   - `applyHeadingAtCaret(level)` — set the caret's line to a
  *     heading of `level` (1–5). Replaces any existing heading
  *     marker on the line so repeated clicks don't stack
@@ -66,7 +62,7 @@
  *     uses this to decide between "wrap selection" and "insert
  *     placeholder" behaviour for each formatting tool.
  *
- * Both insert/replace methods write back to the model via the
+ * The insert/replace methods write back to the model via the
  * same `@input` event the user's typing triggers, so any
  * downstream `v-model` consumer sees a single update per call
  * and the highlight overlay re-renders synchronously.

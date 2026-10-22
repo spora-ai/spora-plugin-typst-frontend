@@ -13,12 +13,8 @@
  *
  * Both lists are loaded lazily by the parent (CompileForm) when
  * the modal opens; the modal just renders whichever the parent
- * hands it.
- *
- * On insert, emits `pick-plugin-image` or `pick-media-image`
- * with the chosen image's URL. The parent builds the
- * `#image("url", width: 80%)` snippet and inserts it at the
- * caret.
+ * hands it. The parent builds the `#image("url", width: 80%)`
+ * snippet and inserts it at the caret.
  *
  * The plugin-image thumbnails are threaded through
  * `withPrincipal(url, principalId)` so the picker can show a
@@ -28,8 +24,9 @@
  * template-overlay read).
  *
  * Native `<dialog>` for the UA-managed focus trap + ::backdrop.
- * `showModal()` is called from onMounted (the parent mounts
- * with `open=true` so the watcher-on-change path doesn't fire).
+ * The parent keeps this mounted and flips `open`, so `showModal()`
+ * is called from the watcher on `open`; the `onMounted` branch only
+ * covers a modal that is already open when it mounts.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'

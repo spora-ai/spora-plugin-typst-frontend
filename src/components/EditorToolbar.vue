@@ -2,34 +2,15 @@
 /**
  * Editor toolbar — sits directly above the source editor.
  *
- * Composition:
- *   - `<HeadingMenu>` (H1–H5 picker) — rendered before the
- *     wrap tools since operators reach for headings before
- *     inline emphasis.
- *   - Wrap tools (Bold, Italic, Underline) — symmetric
- *     delimiter-pair tools that wrap a selection or insert a
- *     placeholder.
- *   - Link (link-dialog kind) — opens `<LinkInsertDialog>`.
- *   - `#trailing` slot — caller-provided slot for the Insert
- *     Template / Insert Image trigger buttons.
- *
- * Each tool button:
- *   - Reads `editorRef.getSelection()` for wrap tools
- *   - Dispatches through `editorRef.insertAtCaret`
- *   - Re-focuses the editor with `preventScroll: true` so the
- *     textarea's scroll position survives the toolbar click
+ * Each tool button re-focuses the editor with `preventScroll: true`
+ * after inserting, so the textarea's scroll position survives the
+ * toolbar click.
  *
  * The HeadingMenu emits `insert` with a level (1–5); the toolbar
  * delegates to `editorRef.applyHeadingAtCaret(level)`, which
  * replaces any existing heading marker on the caret's line so
  * clicking H3 on an already-H1 line cleanly upgrades to `=== `
  * rather than stacking `== = ` on top.
- *
- * Sticky on scroll (`sticky top-0`) so the formatting tools
- * stay reachable while the operator scrolls through a long
- * document.
- *
- * No keyboard shortcuts in this commit — those are a follow-up.
  */
 import { ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'

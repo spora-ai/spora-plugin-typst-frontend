@@ -26,11 +26,10 @@ export interface ResourceSummary {
 }
 
 /**
- * One rendered preview cache entry — the decoded Blob URL form
- * of {@see stores/resources.RenderExampleResult}. `format` mirrors
- * the API envelope's union (`'pdf' | 'png' | 'svg'`) so the
- * template's `format === 'png'` / `'svg'` / `'pdf'` branch
- * narrows without a cast.
+ * One rendered preview cache entry — the decoded Blob URL form of the
+ * store's `RenderExampleResult` (`PreviewResult`, aliased in
+ * `stores/resources.ts`). `format` mirrors the API envelope's union so
+ * the two shapes stay in step.
  */
 export interface RenderedPreview {
     blobUrl: string
@@ -40,13 +39,6 @@ export interface RenderedPreview {
     height: number | null
 }
 
-/**
- * Format a byte count for the card's `{{ formatBytes(size) }}` slot.
- * Hoisted to module scope because it doesn't read any composable
- * closure and re-creating on every `useResourceCardList()` call
- * would just churn. The output tiers mirror the format used
- * elsewhere in the admin SPA.
- */
 function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`
@@ -55,11 +47,12 @@ function formatBytes(n: number): string {
 
 /**
  * Decode the base64 payload `POST /typst/preview` returns into a
- * `Blob` so we can hand the bytes to `<img src>` / `<a href>` via
- * a transient objectURL. `atob` operates on a binary string, so
- * we walk each char and push its byte value into the Uint8Array.
- * Keeps the conversion in one place — the cache only stores
- * objectURLs, not raw base64.
+ * `Blob` so we can hand the bytes to `<img src>` / `<a href>` via a
+ * transient objectURL. `atob` operates on a binary string, so each char
+ * is walked and its byte value pushed into the Uint8Array.
+ *
+ * Keeps the conversion in one place — the cache only stores objectURLs,
+ * not raw base64.
  */
 function base64ToBlob(base64: string, mime: string): Blob {
     const bytes = atob(base64)
@@ -74,30 +67,12 @@ function base64ToBlob(base64: string, mime: string): Blob {
 }
 
 /**
- * Card-grid data layer shared by the Templates and Examples panels.
+ * Card-grid data layer shared by the Templates and Examples panels:
+ * the per-name source cache, the per-name render cache, and the
+ * loading / error flags the card grid and the overlay read.
  *
- * The previous version tracked `<details>` open state and
- * highlight.js output here. The overlay refactor moved both into
- * `<ResourceOverlay>` (a modal driven by source fetched on open),
- * so the composable now owns only the data the overlay + card
- * need: the per-name source cache, the per-name render cache,
- * the delete confirm, and the loading / error flags.
- *
- * Source cache:
- *   `ensureSource(name)` lazy-fetches the source the first time
- *   a card is opened or the overlay is mounted. Subsequent
- *   lookups short-circuit on the cache hit so re-opens don't
- *   round-trip to the backend.
- *
- * Render cache:
- *   `renderExample(name, content)` calls `/typst/preview` and
- *   decodes the base64 payload into a Blob URL. Cached per-name
- *   so the operator can re-open the overlay and still see the
- *   last render. `clearRender(name)` revokes the objectURL when
- *   the entry is dropped (e.g. after delete).
- *
- * Returns plain Vue refs so callers can destructure into
- * templates or pass them down as props to a child component.
+ * Returns plain Vue refs so callers can destructure into templates or
+ * pass them down as props to a child component.
  */
 export function useResourceCardList(kind: ResourceKind) {
     const store = useResourceStore()
@@ -138,13 +113,8 @@ export function useResourceCardList(kind: ResourceKind) {
         renderError.value = null
         try {
             // The store's `renderExample` bridge hits `/typst/preview`
-            // and returns the decoded `RenderExampleResult` (which
-            // is now an alias for `PreviewResult` so the shape
-            // stays in sync automatically — see
-            // `src/stores/resources.ts`). The store-level
-            // indirection keeps the composable out of the api/*
-            // module graph so the components can render without
-            // dragging the network client in.
+            // and returns the raw `RenderExampleResult` — an alias
+            // of `PreviewResult`, so the two shapes stay in step.
             const result = await store.renderExample(name, content, 'png', 144)
             if (result === null) {
                 renderError.value = store.error ?? t('failed to render example')

@@ -2,9 +2,9 @@
 /**
  * Drag-drop uploader for fonts (.ttf / .otf / .woff / .woff2).
  *
- * Calls the `readFileAsBase64` helper (api/images.ts — shared because
- * the FileReader→base64 idiom is the same for any binary upload) to
- * convert the file before pushing to the store.
+ * The font bytes go through the same FileReader→base64 step as the image
+ * uploader, but through a local copy of the helper: fonts carry no MIME
+ * sniffing and no SVG branch, so there is nothing to share.
  *
  * Tier-1 fonts (skill-shipped) are NOT uploadable through this
  * component — the store's `removeFont` refuses them via 422, but we
