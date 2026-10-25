@@ -98,7 +98,20 @@ export default defineConfig({
             reportsDirectory: './coverage',
             // Mirrors sonar.coverage.exclusions — excludes Vue SFCs / type-only files
             // so the coverage number reflects exercised code, not an inflated denominator.
-            include: ['src/api/**/*.ts', 'src/stores/**/*.ts', 'src/composables/**/*.ts', 'src/i18n/**/*.ts'],
+            //
+            // Every directory SonarCloud expects coverage for has to be
+            // measured here, or the report says nothing about it and the
+            // quality gate reports "no data" instead of a percentage.
+            // `src/constants` was missing: `sonar.coverage.exclusions` does
+            // not exclude it, so SonarCloud counted its lines as new code
+            // while the report said nothing about them.
+            include: [
+                'src/api/**/*.ts',
+                'src/stores/**/*.ts',
+                'src/composables/**/*.ts',
+                'src/i18n/**/*.ts',
+                'src/constants/**/*.ts',
+            ],
             exclude: ['src/main.ts', 'src/dev-main.ts', 'src/shims.d.ts', 'src/types.ts', 'src/**/*.{vue,css}'],
         },
     },
