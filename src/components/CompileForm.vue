@@ -59,7 +59,7 @@ import { usePrincipalsStore } from '../stores/principals'
 import { useResourceStore } from '../stores/resources'
 import { useSourcesStore, type SourcesKindFilter } from '../stores/sources'
 import { useTabsStore } from '../stores/tabs'
-import { DEFAULT_PPI } from '../constants/ppi'
+import { DEFAULT_PPI, SUPPORTED_PPI } from '../constants/ppi'
 import type { ImageResource, MediaArchiveImage, PlaygroundSourceSummary, TemplateResource } from '../types'
 import OpenPickerModal from './OpenPickerModal.vue'
 import SourceEditor from './SourceEditor.vue'
@@ -115,28 +115,38 @@ const DEFAULT_FILENAME = 'editor.typ'
 const PREVIEW_ENDPOINT = 'POST /api/v1/typst/preview'
 
 /**
- * The raster-density options the operator can pick.
+ * The label each raster density carries in the operator's language.
  *
- * The values mirror `constants/ppi.ts` / the backend's
- * `SUPPORTED_PPI`; the labels are copy, so they are resolved here where
- * the panel's language is known.
+ * Keyed by the literal type of `SUPPORTED_PPI`, so a density added to
+ * the constant without a label here is a type error rather than an
+ * empty option in the dropdown.
  */
-const PPI_OPTIONS = [
-    { value: 72, label: t('72 PPI — web / thumbnail') },
+const PPI_LABELS: Record<(typeof SUPPORTED_PPI)[number], string> = {
+    72: t('72 PPI — web / thumbnail'),
     // `String.raw` keeps the `\@` that vue-i18n's message compiler reads as
     // an escaped `@` — without it a bare `@` starts a linked message and the
     // compiler throws "Invalid linked format" at render. In a plain string
     // literal that backslash would have to be escaped itself.
-    { value: 144, label: t(String.raw`144 PPI — Retina \@2x (default)`) },
+    144: t(String.raw`144 PPI — Retina \@2x (default)`),
     // A product designation and a number — the one option with no word to
     // translate. A catalogue entry could only carry a German value identical
     // to its key (which rule 3 rejects as an untranslated placeholder) or an
     // invented German qualifier (which the contract forbids), so it stays a
     // raw label. Outside `t()` the `@` needs no escape: no message compiler
     // runs over it, and Apple's own German pages write "Retina @4x" too.
-    { value: 288, label: '288 PPI — Retina @4x' },
-    { value: 600, label: t('600 PPI — print pre-press') },
-]
+    288: '288 PPI — Retina @4x',
+    600: t('600 PPI — print pre-press'),
+}
+
+/**
+ * The raster-density options the operator can pick.
+ *
+ * The values come from `constants/ppi.ts` — the one copy of the list the
+ * backend curates — so a density added there reaches this dropdown. Only
+ * the labels are resolved here, because a label is copy and the panel's
+ * language is known here.
+ */
+const PPI_OPTIONS = SUPPORTED_PPI.map((value) => ({ value, label: PPI_LABELS[value] }))
 
 /**
  * The diagnostic severities the panel renders. The severity itself
