@@ -2,15 +2,14 @@
  * Wire-level constants mirrored from
  * `spora-plugin-typst/src/Producers/TypstRenderProducer.php`.
  *
- * `SUPPORTED_PPI` mirrors the backend's curated list, and it is the only
- * copy of that list in the panel: `components/CompileForm.vue` builds
- * its `<select>` options from these values, so a density added here
- * reaches the operator's screen. The labels are copy and stay in the
- * component, where the panel's language is known.
+ * `SUPPORTED_PPI` mirrors the backend's curated list and is the only copy
+ * of that list in the panel: `components/CompileForm.vue` builds its
+ * `<select>` options from these values. The labels are copy, so they live
+ * in the component where the panel's language is known.
  *
- * The literal type is what holds the two halves together — the label
- * map in the component is keyed by it, so a density added here without
- * a label there is a type error rather than an empty option.
+ * The literal type is what ties the two together — the component's label
+ * map is keyed by it, so a density added here without a label there is a
+ * type error rather than an empty option.
  *
  * The LLM tool accepts any positive number in the wider range (36–600).
  *

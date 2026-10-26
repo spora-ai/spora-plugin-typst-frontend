@@ -1,6 +1,4 @@
 /**
- * The panel's raster-density list, pinned to the backend's.
- *
  * `src/constants/ppi.ts` mirrors `TypstRenderProducer::SUPPORTED_PPI` in
  * `spora-plugin-typst`. The two live in separate repositories, so nothing
  * in this suite can read the PHP constant — this test is the diff a

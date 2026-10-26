@@ -114,13 +114,6 @@ const DEFAULT_FILENAME = 'editor.typ'
  */
 const PREVIEW_ENDPOINT = 'POST /api/v1/typst/preview'
 
-/**
- * The label each raster density carries in the operator's language.
- *
- * Keyed by the literal type of `SUPPORTED_PPI`, so a density added to
- * the constant without a label here is a type error rather than an
- * empty option in the dropdown.
- */
 const PPI_LABELS: Record<(typeof SUPPORTED_PPI)[number], string> = {
     72: t('72 PPI — web / thumbnail'),
     // `String.raw` keeps the `\@` that vue-i18n's message compiler reads as
@@ -138,14 +131,6 @@ const PPI_LABELS: Record<(typeof SUPPORTED_PPI)[number], string> = {
     600: t('600 PPI — print pre-press'),
 }
 
-/**
- * The raster-density options the operator can pick.
- *
- * The values come from `constants/ppi.ts` — the one copy of the list the
- * backend curates — so a density added there reaches this dropdown. Only
- * the labels are resolved here, because a label is copy and the panel's
- * language is known here.
- */
 const PPI_OPTIONS = SUPPORTED_PPI.map((value) => ({ value, label: PPI_LABELS[value] }))
 
 /**
